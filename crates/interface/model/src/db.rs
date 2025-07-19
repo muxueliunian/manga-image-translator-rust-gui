@@ -203,7 +203,7 @@ fn download_and_extract(url: &str, file_path: &Path, folder: bool) -> Result<(),
     if let Some(pb) = pb {
         pb.finish_with_message("Download complete");
     }
-
+    let url = url.split_once("?").map(|v| v.0).unwrap_or(url);
     if url.ends_with(".tar.gz") {
         debug!("Extracting archive...");
 
