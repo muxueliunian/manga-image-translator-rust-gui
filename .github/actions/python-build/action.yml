@@ -97,7 +97,10 @@ runs:
             dll_list = find_dlls()
             if sys.platform.startswith("win"):
                 dll_list.append(find_windows_dll())
-            targets_inside_wheel = [(f"{package_root_subdir}.libs/{path.name}", path, generate_info(path)) for path in dll_list]
+            if sys.platform.startswith("linux"):
+              targets_inside_wheel = [(f"{package_root_subdir}.libs/{path.name}", path, generate_info(path)) for path in dll_list]
+            else:
+              targets_inside_wheel = [(f"{package_root_subdir}/{path.name}", path, generate_info(path)) for path in dll_list]
 
             tmp_wheel_path = wheel_path.with_name(wheel_path.stem + "_tmp.whl")
 
