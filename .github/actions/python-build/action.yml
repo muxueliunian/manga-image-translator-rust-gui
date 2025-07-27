@@ -48,10 +48,10 @@ runs:
         def get_opencv_dylib_paths():
             try:
                 prefix = subprocess.check_output(["brew", "--prefix", "opencv"], text=True).strip()
-                lib_dir = os.path.join(prefix, "lib")
-                pattern = os.path.join(lib_dir, "libopencv_*.dylib")
-                return glob.glob(pattern)
-            except subprocess.CalledProcessError as e:
+                lib_dir = Path(prefix) / "lib"
+                pattern = str(lib_dir / "libopencv_*.dylib")
+                return [Path(p) for p in glob.glob(pattern)]
+            except subprocess.CalledProcessError:
                 print("Error: Could not find OpenCV via Homebrew.")
                 return []
         def find_windows_dll() -> Path:
