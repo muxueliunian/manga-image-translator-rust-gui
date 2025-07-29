@@ -25,19 +25,19 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Setup Linux
-        if: matrix.platform.runs-on == 'ubuntu-latest'
+        if: matrix.platform.name == 'linux-x86_64'
         uses: ./.github/actions/setup-linux
         with:
           runs-on: ${{ matrix.platform.runs-on }}
 
       - name: Setup macOS
-        if: matrix.platform.runs-on == 'macos-latest'
+        if: matrix.platform.name == 'macos-arm64'
         uses: ./.github/actions/setup-macos
         with:
           runs-on: ${{ matrix.platform.runs-on }}
 
       - name: Setup Windows
-        if: matrix.platform.runs-on == 'windows-latest'
+        if: matrix.platform.name == 'windows-x86_64'
         uses: ./.github/actions/setup-windows
         with:
           runs-on: ${{ matrix.platform.runs-on }}
