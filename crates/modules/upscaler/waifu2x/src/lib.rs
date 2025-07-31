@@ -4,7 +4,7 @@ use base_util::{
     error::PreProcessingError,
     onnx::{new_session, Providers},
 };
-use interface_image::{combine_patches_m, generate_patches, ImageOp, RawImage};
+use interface_image::{combine_patches_m, generate_patches, DimType, ImageOp, RawImage};
 use interface_model::{impl_model_load_helpers, Model, ModelLoad, ModelSource};
 use interface_upscaler::Upscaler;
 use maplit::hashmap;
@@ -53,6 +53,35 @@ pub enum Waifu2xModels {
     SwinUnetArt { x4: bool, noise: Option<u8> },
     SwinUnetArtScan { x4: bool, noise: Option<u8> },
     SwinUnetArtPhoto { x4: bool, noise: Option<u8> },
+}
+
+impl Waifu2xModels {
+    fn scale(&self) -> usize {
+        match self {
+            Waifu2xModels::CuNetArt { .. } => 2,
+            Waifu2xModels::SwinUnetArt { x4, .. } => {
+                if *x4 {
+                    4
+                } else {
+                    2
+                }
+            }
+            Waifu2xModels::SwinUnetArtScan { x4, .. } => {
+                if *x4 {
+                    4
+                } else {
+                    2
+                }
+            }
+            Waifu2xModels::SwinUnetArtPhoto { x4, .. } => {
+                if *x4 {
+                    4
+                } else {
+                    2
+                }
+            }
+        }
+    }
 }
 
 impl Waifu2xUpscaler {
@@ -135,7 +164,7 @@ impl Model for Waifu2xUpscaler {
 #[cfg(test)]
 mod tests {
     use base_util::onnx::all_providers;
-    use interface_image::{CpuImageProcessor, ImageOp, RawImage};
+    use interface_image::{CpuImageProcessor, DimType, ImageOp, RawImage};
     use interface_upscaler::Upscaler as _;
 
     use crate::{Waifu2xModels, Waifu2xUpscaler};
@@ -167,8 +196,8 @@ mod tests {
             .unwrap()
             .save("upscaled.png")
             .unwrap();
-        assert_eq!(upscaled.width, w * 2);
-        assert_eq!(upscaled.height, w * 2);
+        assert_eq!(upscaled.width, w * upscaler.model_kind.scale() as DimType);
+        assert_eq!(upscaled.height, w * upscaler.model_kind.scale() as DimType);
     }
 
     #[test]
@@ -192,8 +221,8 @@ mod tests {
                 &(img_processor as Box<dyn ImageOp + Send + Sync>),
             )
             .expect("Failed to upscale image");
-        assert_eq!(upscaled.width, w * 2);
-        assert_eq!(upscaled.height, w * 2);
+        assert_eq!(upscaled.width, w * upscaler.model_kind.scale() as DimType);
+        assert_eq!(upscaled.height, w * upscaler.model_kind.scale() as DimType);
     }
 }
 
@@ -284,8 +313,18 @@ impl Upscaler for Waifu2xUpscaler {
             .collect::<Vec<_>>();
         let ps = patches[0].width;
         let out = match patch_size {
-            Some(_) => combine_patches_m(patches, w * 2, h * 2, ps as usize, padding * 2),
-            None => img_processor.remove_border(patches.remove(0), w * 2, h * 2),
+            Some(_) => combine_patches_m(
+                patches,
+                w * self.model_kind.scale() as DimType,
+                h * self.model_kind.scale() as DimType,
+                ps as usize,
+                padding * self.model_kind.scale(),
+            ),
+            None => img_processor.remove_border(
+                patches.remove(0),
+                w * self.model_kind.scale() as DimType,
+                h * self.model_kind.scale() as DimType,
+            ),
         };
 
         Ok(out)
