@@ -1,7 +1,7 @@
 mod mpe;
 use base_util::onnx::{new_session, Providers};
 use interface_image::{ImageOp, RawImage};
-use interface_inpainter::Inpainter;
+use interface_inpainter::{Inpainter, InpainterOptions};
 use interface_model::{impl_model_load_helpers, Model, ModelLoad, ModelSource};
 use maplit::hashmap;
 use ndarray::{ArrayView4, Axis};
@@ -18,18 +18,6 @@ impl LamaLargeInpainter {
         Self {
             model: None,
             providers,
-        }
-    }
-}
-
-pub struct InpainterOptions {
-    inpainting_size: u16,
-}
-
-impl Default for InpainterOptions {
-    fn default() -> Self {
-        Self {
-            inpainting_size: 2048,
         }
     }
 }
@@ -66,13 +54,11 @@ impl Model for LamaLargeInpainter {
 }
 
 impl Inpainter for LamaLargeInpainter {
-    type Options = InpainterOptions;
-
     fn inpaint(
         &mut self,
         image: interface_image::RawImage,
         mask: interface_image::Mask,
-        options: Self::Options,
+        options: InpainterOptions,
         img_processor: &Box<dyn ImageOp + Send + Sync>,
     ) -> anyhow::Result<interface_image::RawImage> {
         let ho = image.height;

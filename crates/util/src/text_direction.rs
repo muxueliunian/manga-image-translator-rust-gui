@@ -7,7 +7,7 @@ use petgraph::unionfind::UnionFind;
 use petgraph::visit::{EdgeRef as _, NodeIndexable as _};
 use petgraph::{Graph, Undirected};
 
-fn connected_components_sets<N, E>(
+pub fn connected_components_sets<N, E>(
     graph: &Graph<N, E, Undirected>,
 ) -> Vec<Vec<petgraph::graph::NodeIndex>> {
     let mut uf = UnionFind::new(graph.node_bound());
@@ -69,7 +69,7 @@ fn generate_text_direction(
     })
 }
 
-fn quadrilateral_can_merge_region(
+pub fn quadrilateral_can_merge_region(
     a: &Quadrilateral,
     b: &Quadrilateral,
     ratio: f32,

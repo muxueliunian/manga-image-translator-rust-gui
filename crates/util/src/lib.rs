@@ -4,7 +4,7 @@ pub mod imageproc;
 pub mod lama;
 pub mod nd;
 pub mod opencv;
-mod text_direction;
+pub mod text_direction;
 
 // infer | macos | python
 // Run 1: 3.3190 seconds

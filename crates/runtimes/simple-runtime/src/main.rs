@@ -1,13 +1,17 @@
 use clap::Parser as _;
 use config::Config;
+use log::warn;
 use walkdir::WalkDir;
 
-use crate::settings::Settings;
+use crate::{settings::Settings, setup::Models};
 
 pub mod cli;
+mod execute;
 pub mod settings;
+pub mod setup;
 
-fn main() {
+#[tokio::main]
+async fn main() {
     let cli = cli::Cli::parse();
     let mut input = WalkDir::new(&cli.input)
         .into_iter()
@@ -35,5 +39,15 @@ fn main() {
             .into_iter()
             .filter(|v| !cli.output.join(v).exists())
             .collect::<Vec<_>>();
+    }
+    let mut models = Models::new(2, true, false).await;
+    for path in input {
+        let path = cli.input.join(path);
+        if !path.exists() || !path.is_file() {
+            warn!("File {} cant be found", path.display());
+            continue;
+        }
+        let img = image::open(path).unwrap();
+        models.execute(img, &settings).await;
     }
 }

@@ -13,6 +13,7 @@ mod rayon;
 pub use cpu::CpuImageProcessor;
 #[cfg(feature = "gpu")]
 pub use gpu::GpuImageProcessor;
+use image::{DynamicImage, RgbaImage};
 use ndarray::{Array, Array2, Dim};
 use opencv::core::{Mat, MatTraitConst as _};
 pub use rayon::RayonImageProcessor;
@@ -35,6 +36,37 @@ pub struct RawImage {
 }
 
 impl RawImage {
+    pub fn _rgba(img: RgbaImage) -> (Self, Vec<u8>) {
+        let v: (Vec<_>, Vec<_>) = img.pixels().map(|v| (&v.0[..3], v.0[3])).unzip();
+        let data = v.0.concat();
+        let alpha = v.1;
+        (
+            RawImage {
+                data,
+                width: img.width() as DimType,
+                height: img.height() as DimType,
+                channels: 3,
+            },
+            alpha,
+        )
+    }
+    pub fn rgba(img: DynamicImage) -> (Self, Option<Vec<u8>>) {
+        match img {
+            DynamicImage::ImageRgba8(img) => {
+                let (img, alpha) = Self::_rgba(img);
+                (img, Some(alpha))
+            }
+            DynamicImage::ImageRgba16(img) => {
+                let (img, alpha) = Self::_rgba(DynamicImage::from(img).to_rgba8());
+                (img, Some(alpha))
+            }
+            DynamicImage::ImageRgba32F(img) => {
+                let (img, alpha) = Self::_rgba(DynamicImage::from(img).to_rgba8());
+                (img, Some(alpha))
+            }
+            img => (RawImage::from(img), None),
+        }
+    }
     pub fn url(url: &str) -> anyhow::Result<Self> {
         let mut img = ureq::get(url).call()?;
         let body = img.body_mut();

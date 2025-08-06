@@ -18,7 +18,7 @@ pub trait Ocr {
     ) -> anyhow::Result<QuadrilateralInfo>;
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct QuadrilateralInfo {
     pub text: String,
     pub fg: Option<[u8; 3]>,

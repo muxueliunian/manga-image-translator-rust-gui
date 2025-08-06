@@ -1,0 +1,15 @@
+[package]
+name = "textline-merge"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+util.workspace = true
+interface-detector.workspace = true
+interface-ocr.workspace = true
+itertools.workspace = true
+petgraph.workspace = true
+ordered-float = "5"
+log = "0.4.27"
+once_cell.workspace = true
+interface-translator.workspace = true

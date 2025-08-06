@@ -1,0 +1,9 @@
+[package]
+name = "densecrf"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+
+[build-dependencies]
+cc = "1.2"
