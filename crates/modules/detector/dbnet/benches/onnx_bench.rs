@@ -1,15 +1,14 @@
-use base_util::RawSerializable;
+use base_util::onnx::all_providers;
 use criterion::{criterion_group, criterion_main, Criterion};
 use dbnet::DbNetDetector;
 use interface_detector::DefaultOptions;
 use interface_detector::Detector;
 use interface_detector::PreprocessorOptions;
 use interface_image::{CpuImageProcessor, ImageOp, RawImage};
-use interface_model::CreateData;
 use interface_model::ModelLoad;
 
 fn criterion_benchmark(c: &mut Criterion) {
-    let mut data = DbNetDetector::new(CreateData::all(), false);
+    let mut data = DbNetDetector::new(all_providers(), false);
     let img = RawImage::new("./imgs/232264684-5a7bcf8e-707b-4925-86b0-4212382f1680.png")
         .expect("Failed to load image");
     let cpu_image_processor =
@@ -24,13 +23,7 @@ fn criterion_benchmark(c: &mut Criterion) {
 
     c.bench_function("infer", |b| {
         data.load().expect("Failed to load model");
-        b.iter(|| {
-            data.infer(
-                img.clone(),
-                DefaultOptions::default().dump(),
-                &cpu_image_processor,
-            )
-        })
+        b.iter(|| data.infer(img.clone(), DefaultOptions::default(), &cpu_image_processor))
     });
 
     c.bench_function("detection", |b| {
@@ -39,7 +32,7 @@ fn criterion_benchmark(c: &mut Criterion) {
             data.detect(
                 &img,
                 PreprocessorOptions::default(),
-                DefaultOptions::default().dump(),
+                DefaultOptions::default(),
                 &cpu_image_processor,
             )
         })

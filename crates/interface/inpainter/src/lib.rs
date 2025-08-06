@@ -1,20 +1,32 @@
 use interface_image::{ImageOp, Mask, RawImage};
 use interface_model::Model;
 
-pub trait Inpainter: Model {
-    type Options;
+pub struct InpainterOptions {
+    pub inpainting_size: u16,
+    pub color: [u8; 3],
+}
 
+impl Default for InpainterOptions {
+    fn default() -> Self {
+        Self {
+            color: [255; 3],
+            inpainting_size: 2048,
+        }
+    }
+}
+
+pub trait Inpainter: Model {
     /// Will inpaint into image. This will change the whole image. A cutout of the image still needs to happen afterwards
     fn inpaint(
         &mut self,
         image: RawImage,
         mask: Mask,
-        options: Self::Options,
+        options: InpainterOptions,
         img_processor: &Box<dyn ImageOp + Send + Sync>,
     ) -> anyhow::Result<RawImage>;
 }
 
-pub fn remove_mask_area(mut image: RawImage, mask: &Mask) -> RawImage {
+pub fn remove_mask_area(image: RawImage, mask: &Mask) -> RawImage {
     colorize_mask_area(image, mask, [0, 0, 0])
 }
 

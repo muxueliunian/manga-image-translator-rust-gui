@@ -2,31 +2,35 @@ use std::f32;
 
 use base_util::{
     error::ModelLoadError,
-    onnx::{all_providers, new_session_},
+    onnx::{all_providers, new_session_, Providers},
     RawSerializable,
 };
 use geo::{MinimumRotatedRect, Point};
 
 use interface_detector::{textlines::Quadrilateral, DefaultOptions, Detector};
 use interface_image::{ImageOp, Mask, RawImage};
-use interface_model::{impl_model_load_helpers, CreateData, Model, ModelLoad, ModelSource};
+use interface_model::{impl_model_load_helpers, Model, ModelLoad, ModelSource};
 use maplit::hashmap;
 use ort::session::builder::SessionBuilder;
 use paddle_ocr_rs::{base_net::BaseNet, db_net::DbNet, scale_param::ScaleParam};
 
 pub struct PaddleDetector {
     db_net: Option<DbNet>,
-    db: CreateData,
+    providers: Vec<Providers>,
 }
 
 impl PaddleDetector {
     ///convnext: Different model architecture, but based on dbnet
-    pub fn new(db: CreateData) -> Self {
-        PaddleDetector { db, db_net: None }
+    pub fn new(providers: Vec<Providers>) -> Self {
+        PaddleDetector {
+            providers,
+            db_net: None,
+        }
     }
 }
 
 fn ses_builder(v: SessionBuilder) -> Result<SessionBuilder, ort::Error> {
+    //TODO: fix
     new_session_(v, all_providers())
 }
 impl ModelLoad for PaddleDetector {
@@ -114,10 +118,9 @@ impl Detector for PaddleDetector {
     fn infer(
         &mut self,
         img: RawImage,
-        options: &[u8],
+        options: DefaultOptions,
         _: &Box<dyn ImageOp + Send + Sync>,
     ) -> anyhow::Result<(Vec<Quadrilateral>, Mask)> {
-        let options = DefaultOptions::parse(options)?;
         let db_net = self.load()?;
 
         let max_side_len = 960;
@@ -247,21 +250,21 @@ fn fill_polygon(mask: &mut [u8], width: usize, height: usize, poly: &[(i64, i64)
 #[cfg(test)]
 mod tests {
     use crate::PaddleDetector;
-    use base_util::RawSerializable as _;
+    use base_util::onnx::all_providers;
     use interface_detector::{DefaultOptions, Detector as _, PreprocessorOptions};
     use interface_image::{CpuImageProcessor, ImageOp, RawImage};
-    use interface_model::{CreateData, Model as _, ModelLoad};
+    use interface_model::{Model as _, ModelLoad};
 
     #[test]
     fn load_unload() {
-        let mut data = PaddleDetector::new(CreateData::all());
+        let mut data = PaddleDetector::new(all_providers());
         data.load().expect("failed to load model");
         data.unload();
     }
 
     #[test]
     fn run() {
-        let mut data = PaddleDetector::new(CreateData::all());
+        let mut data = PaddleDetector::new(all_providers());
         let cpu_image_processor =
             Box::new(CpuImageProcessor::default()) as Box<dyn ImageOp + Send + Sync>;
         data.load().expect("Failed to load data");
@@ -269,7 +272,7 @@ mod tests {
             &RawImage::new("./imgs/232265329-6a560438-e887-4f7f-b6a1-a61b8648f781.png")
                 .expect("Failed to load image"),
             PreprocessorOptions::default(),
-            DefaultOptions::default().dump(),
+            DefaultOptions::default(),
             &cpu_image_processor,
         )
         .expect("failed to detect");

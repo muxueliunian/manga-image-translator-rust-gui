@@ -1,12 +1,11 @@
 use base_util::{
     error::{ModelLoadError, ProcessingError},
-    onnx::new_session,
-    RawSerializable as _,
+    onnx::{new_session, Providers},
 };
 
 use interface_detector::{textlines::Quadrilateral, DefaultOptions, Detector};
 use interface_image::{DimType, ImageOp, Interpolation, Mask, RawImage};
-use interface_model::{impl_model_load_helpers, CreateData, Model, ModelLoad, ModelSource};
+use interface_model::{impl_model_load_helpers, Model, ModelLoad, ModelSource};
 use log::debug;
 
 use ndarray::{array, Array2, Array3, Array4, ArrayViewD, Axis};
@@ -20,7 +19,7 @@ use util::{
 use maplit::hashmap;
 
 pub struct DbNetDetector {
-    db: CreateData,
+    providers: Vec<Providers>,
     model: Option<Session>,
     /// Different model architecture, but based on dbnet
     convnext: bool,
@@ -28,9 +27,9 @@ pub struct DbNetDetector {
 
 impl DbNetDetector {
     ///convnext: Different model architecture, but based on dbnet
-    pub fn new(db: CreateData, convnext: bool) -> Self {
+    pub fn new(providers: Vec<Providers>, convnext: bool) -> Self {
         DbNetDetector {
-            db,
+            providers,
             model: None,
             convnext,
         }
@@ -45,7 +44,7 @@ impl ModelLoad for DbNetDetector {
     fn reload(&mut self) -> Result<&mut Session, ModelLoadError> {
         self.model = Some(new_session(
             self.download_model("model", "model.onnx")?,
-            self.db.providers.clone(),
+            self.providers.clone(),
         )?);
         Ok(self.model.as_mut().unwrap())
     }
@@ -94,10 +93,9 @@ impl Detector for DbNetDetector {
     fn infer(
         &mut self,
         img: RawImage,
-        options: &[u8],
+        options: DefaultOptions,
         img_processor: &Box<dyn ImageOp + Send + Sync>,
     ) -> anyhow::Result<(Vec<Quadrilateral>, Mask)> {
-        let options = DefaultOptions::parse(options)?;
         let session = self.load()?;
 
         let (db, mask, shape, ratio_w, ratio_h, pad_w, pad_h) =
@@ -240,21 +238,21 @@ fn adjust_result_coordinates(
 #[cfg(test)]
 mod tests {
     use crate::{DbNetDetector, DefaultOptions};
-    use base_util::RawSerializable as _;
+    use base_util::onnx::all_providers;
     use interface_detector::{Detector, PreprocessorOptions};
     use interface_image::{CpuImageProcessor, ImageOp, RawImage};
-    use interface_model::{CreateData, Model as _, ModelLoad as _};
+    use interface_model::{Model as _, ModelLoad as _};
 
     #[test]
     fn load_unload() {
-        let mut data = DbNetDetector::new(CreateData::all(), false);
+        let mut data = DbNetDetector::new(all_providers(), false);
         data.load().expect("failed to load model");
         data.unload();
     }
 
     #[test]
     fn run() {
-        let mut data = DbNetDetector::new(CreateData::all(), false);
+        let mut data = DbNetDetector::new(all_providers(), false);
         let cpu_image_processor =
             Box::new(CpuImageProcessor::default()) as Box<dyn ImageOp + Send + Sync>;
         data.load().expect("Failed to load data");
@@ -262,7 +260,7 @@ mod tests {
             &RawImage::new("./imgs/232265329-6a560438-e887-4f7f-b6a1-a61b8648f781.png")
                 .expect("Failed to load image"),
             PreprocessorOptions::default(),
-            DefaultOptions::default().dump(),
+            DefaultOptions::default(),
             &cpu_image_processor,
         )
         .expect("failed to detect");

@@ -33,6 +33,15 @@ pub fn all_providers() -> Vec<Providers> {
     ]
 }
 
+pub fn gpu_providers() -> Vec<Providers> {
+    vec![
+        Providers::CUDA,
+        Providers::TensorRT,
+        #[cfg(target_os = "windows")]
+        Providers::DirectML,
+    ]
+}
+
 pub fn new_session(path: PathBuf, providers: Vec<Providers>) -> Result<Session, ModelLoadError> {
     Ok(new_session_(Session::builder()?, providers)?.commit_from_file(path)?)
 }

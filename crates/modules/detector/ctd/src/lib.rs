@@ -2,12 +2,12 @@ mod refine_mask;
 
 use base_util::{
     error::{PostProcessingError, ProcessingError},
-    onnx::new_session,
+    onnx::{new_session, Providers},
 };
 
-use interface_detector::{textlines::Quadrilateral, Detector};
+use interface_detector::{textlines::Quadrilateral, DefaultOptions, Detector};
 use interface_image::{ImageOp, Interpolation, Mask, RawImage};
-use interface_model::{impl_model_load_helpers, CreateData, Model, ModelLoad, ModelSource};
+use interface_model::{impl_model_load_helpers, Model, ModelLoad, ModelSource};
 use maplit::hashmap;
 use ndarray::{s, stack, Array2, Array4, ArrayViewD, Axis};
 use ort::{session::Session, value::Tensor};
@@ -17,14 +17,17 @@ use util::{
 };
 
 pub struct CtdDetector {
-    db: CreateData,
+    providers: Vec<Providers>,
     model: Option<Session>,
 }
 
 impl CtdDetector {
     ///convnext: Different model architecture, but based on dbnet
-    pub fn new(db: CreateData) -> Self {
-        CtdDetector { db, model: None }
+    pub fn new(providers: Vec<Providers>) -> Self {
+        CtdDetector {
+            providers,
+            model: None,
+        }
     }
 }
 
@@ -37,7 +40,7 @@ impl ModelLoad for CtdDetector {
     fn reload(&mut self) -> Result<&mut Self::T, base_util::error::ModelLoadError> {
         self.model = Some(new_session(
             self.download_model("model", "model.onnx")?,
-            self.db.providers.clone(),
+            self.providers.clone(),
         )?);
         Ok(self.model.as_mut().unwrap())
     }
@@ -64,7 +67,7 @@ impl Detector for CtdDetector {
     fn infer(
         &mut self,
         img: RawImage,
-        _: &[u8],
+        _: DefaultOptions,
         img_processor: &Box<dyn ImageOp + Send + Sync>,
     ) -> anyhow::Result<(Vec<Quadrilateral>, Mask)> {
         let (im_w, im_h) = (img.width, img.height);
@@ -225,22 +228,23 @@ fn letterbox(
 #[cfg(test)]
 mod tests {
 
+    use base_util::onnx::all_providers;
     use interface_detector::{Detector as _, PreprocessorOptions};
     use interface_image::{CpuImageProcessor, ImageOp, RawImage};
-    use interface_model::{CreateData, Model as _, ModelLoad as _};
+    use interface_model::{Model as _, ModelLoad as _};
 
     use crate::CtdDetector;
 
     #[test]
     fn load_unload() {
-        let mut data = CtdDetector::new(CreateData::all());
+        let mut data = CtdDetector::new(all_providers());
         data.load().expect("failed to load model");
         data.unload();
     }
 
     #[test]
     fn run() {
-        let mut data = CtdDetector::new(CreateData::all());
+        let mut data = CtdDetector::new(all_providers());
         let cpu_image_processor =
             Box::new(CpuImageProcessor::default()) as Box<dyn ImageOp + Send + Sync>;
         data.load().expect("Failed to load data");
@@ -250,7 +254,7 @@ mod tests {
             .detect(
                 &img,
                 PreprocessorOptions::default(),
-                &[],
+                Default::default(),
                 &cpu_image_processor,
             )
             .expect("failed to detect");

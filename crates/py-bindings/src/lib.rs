@@ -1,7 +1,6 @@
 use std::sync::Arc;
 
 use base_util::onnx::{all_providers, Providers};
-use base_util::RawSerializable;
 use dbnet::DbNetDetector;
 
 use interface_detector::textlines::Quadrilateral;
@@ -49,10 +48,11 @@ impl Session {
 
     fn default_detector(&self) -> PyDetector {
         PyDetector {
-            inner: Arc::new(Mutex::new(
-                Box::new(DbNetDetector::new(self.inner.clone(), false))
-                    as Box<dyn Detector + Send + Sync>,
-            )),
+            inner: Arc::new(Mutex::new(Box::new(DbNetDetector::new(
+                self.inner.providers.clone(),
+                false,
+            ))
+                as Box<dyn Detector + Send + Sync>)),
             processor: self.processor.clone(),
         }
     }
@@ -60,7 +60,7 @@ impl Session {
     fn paddle_detector(&self) -> PyDetector {
         PyDetector {
             inner: Arc::new(Mutex::new(
-                Box::new(PaddleDetector::new(self.inner.clone()))
+                Box::new(PaddleDetector::new(self.inner.providers.clone()))
                     as Box<dyn Detector + Send + Sync>,
             )),
             processor: self.processor.clone(),
@@ -69,10 +69,11 @@ impl Session {
 
     fn convnext_detector(&self) -> PyDetector {
         PyDetector {
-            inner: Arc::new(Mutex::new(
-                Box::new(DbNetDetector::new(self.inner.clone(), true))
-                    as Box<dyn Detector + Send + Sync>,
-            )),
+            inner: Arc::new(Mutex::new(Box::new(DbNetDetector::new(
+                self.inner.providers.clone(),
+                true,
+            ))
+                as Box<dyn Detector + Send + Sync>)),
             processor: self.processor.clone(),
         }
     }
@@ -224,7 +225,7 @@ impl PyDetector {
             .allow_threads(|| {
                 inner
                     .lock()
-                    .detect(&img, preprocessor_options, options.dump(), &*processor)
+                    .detect(&img, preprocessor_options, options, &*processor)
             })
             .map_err(|e| PyRuntimeError::new_err(e.to_string()));
         let (qua, mask) = det?;

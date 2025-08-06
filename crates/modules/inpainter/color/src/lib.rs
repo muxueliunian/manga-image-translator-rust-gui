@@ -1,28 +1,21 @@
 use std::collections::HashMap;
 
-use interface_inpainter::{colorize_mask_area, Inpainter};
+use interface_inpainter::{colorize_mask_area, Inpainter, InpainterOptions};
 use interface_model::Model;
 
 pub struct ColorInpainter {
-    color: [u8; 3],
     loaded: bool,
 }
 
 impl Default for ColorInpainter {
     fn default() -> Self {
-        Self {
-            color: [255, 255, 255],
-            loaded: true,
-        }
+        Self::new()
     }
 }
 
 impl ColorInpainter {
-    pub fn new(color: [u8; 3]) -> Self {
-        Self {
-            color,
-            loaded: true,
-        }
+    pub fn new() -> Self {
+        Self { loaded: true }
     }
 }
 
@@ -54,16 +47,14 @@ impl Model for ColorInpainter {
 }
 
 impl Inpainter for ColorInpainter {
-    type Options = ();
-
     fn inpaint(
         &mut self,
         image: interface_image::RawImage,
         mask: interface_image::Mask,
-        _: Self::Options,
+        options: InpainterOptions,
         _: &Box<dyn interface_image::ImageOp + Send + Sync>,
     ) -> anyhow::Result<interface_image::RawImage> {
-        Ok(colorize_mask_area(image, &mask, self.color))
+        Ok(colorize_mask_area(image, &mask, options.color))
     }
 }
 

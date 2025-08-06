@@ -32,6 +32,9 @@ fn min_coords(pts: &[(i64, i64); 4]) -> (i64, i64) {
     })
 }
 
+fn dist(x1: i64, y1: i64, x2: i64, y2: i64) -> f64 {
+    f64::sqrt((x1 - x2).pow(2) as f64 + (y1 - y2).pow(2) as f64)
+}
 impl Quadrilateral {
     pub fn aabb(&self) -> BBox {
         let max_coord = max_coords(&self.pts);
@@ -51,6 +54,98 @@ impl Quadrilateral {
 
     pub fn poly_distance(&self, other: &Self) -> f64 {
         Euclidean.distance(&self.polygon(), &other.polygon())
+    }
+
+    pub fn distance(&self, other: &Self, rho: f64) -> f64 {
+        let assigned_direction = "";
+        let mut pattern = if assigned_direction == "h" {
+            "h_left"
+        } else {
+            "v_top"
+        };
+        let fs = self.font_size().max(other.font_size());
+        if assigned_direction == "h" {
+            let poly1 = MultiPoint::from(vec![
+                Point::from(self.pts[0]),
+                Point::from(self.pts[3]),
+                Point::from(self.pts[0]),
+                Point::from(self.pts[3]),
+            ])
+            .convex_hull();
+            let poly2 = MultiPoint::from(vec![
+                Point::from(self.pts[2]),
+                Point::from(self.pts[1]),
+                Point::from(self.pts[2]),
+                Point::from(self.pts[1]),
+            ])
+            .convex_hull();
+            let poly3 = MultiPoint::from(vec![
+                Point::from(self.pts[0]),
+                Point::from(self.pts[1]),
+                Point::from(self.pts[0]),
+                Point::from(self.pts[1]),
+            ])
+            .convex_hull();
+            let dist1 = poly1.exterior().unsigned_area() as f64 / fs;
+            let dist2 = poly2.exterior().unsigned_area() as f64 / fs;
+            let dist3 = poly3.exterior().unsigned_area() as f64 / fs;
+            if dist1 < fs * rho {
+                pattern = "h_left";
+            }
+            if dist2 < fs * rho && dist2 < dist1 {
+                pattern = "h_right";
+            }
+
+            if dist3 < fs * rho && dist3 < dist1 && dist3 < dist2 {
+                pattern = "h_middle";
+            }
+
+            if pattern == "h_left" {
+                return dist(self.pts[0].0, self.pts[0].1, other.pts[0].0, other.pts[0].1);
+            } else if pattern == "h_right" {
+                dist(self.pts[1].0, self.pts[1].1, other.pts[1].0, other.pts[1].1)
+            } else {
+                let sestr = self.structure();
+                let otstr = other.structure();
+                dist(sestr[0].0, sestr[0].1, otstr[0].0, otstr[0].1)
+            }
+        } else {
+            let poly1 = MultiPoint::from(vec![
+                Point::from(self.pts[0]),
+                Point::from(self.pts[1]),
+                Point::from(self.pts[0]),
+                Point::from(self.pts[1]),
+            ])
+            .convex_hull();
+            let poly2 = MultiPoint::from(vec![
+                Point::from(self.pts[2]),
+                Point::from(self.pts[3]),
+                Point::from(self.pts[2]),
+                Point::from(self.pts[3]),
+            ])
+            .convex_hull();
+            let dist1 = poly1.exterior().unsigned_area() as f64 / fs;
+            let dist2 = poly2.exterior().unsigned_area() as f64 / fs;
+            if dist1 < fs * rho {
+                pattern = "v_top";
+            }
+            if dist2 < fs * rho && dist2 < dist1 {
+                pattern = "v_bottom"
+            }
+            if pattern == "v_top" {
+                dist(self.pts[0].0, self.pts[0].1, other.pts[0].0, other.pts[0].1)
+            } else {
+                dist(self.pts[2].0, self.pts[2].1, other.pts[2].0, other.pts[2].1)
+            }
+        }
+    }
+
+    pub fn centroid(&self) -> (f64, f64) {
+        let sum = self
+            .pts
+            .iter()
+            .fold((0i64, 0i64), |acc, &(x, y)| (acc.0 + x, acc.1 + y));
+        (sum.0 as f64 / 4.0, sum.1 as f64 / 4.0)
     }
 
     pub fn is_approximate_axis_aligned(&self) -> bool {

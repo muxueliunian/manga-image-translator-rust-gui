@@ -15,3 +15,29 @@ config = { workspace = true, features = [
     "yaml",
 ] }
 serde = { workspace = true, features = ["derive"] }
+
+interface-detector.workspace = true
+interface-upscaler.workspace = true
+interface-inpainter.workspace = true
+interface-image.workspace = true
+interface-ocr.workspace = true
+interface-translator.workspace = true
+log.workspace = true
+strum = "0.27.2"
+strum_macros = "0.27.2"
+base-util.workspace = true
+waifu2x.workspace = true
+esrgan.workspace = true
+anime4k.workspace = true
+dbnet.workspace = true
+ctd.workspace = true
+paddle.workspace = true
+lama_aot.workspace = true
+lama_large.workspace = true
+lama_mpe.workspace = true
+manga-ocr.workspace = true
+image.workspace = true
+textline-merge.workspace = true
+imageproc.workspace = true
+ab_glyph.workspace = true
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }

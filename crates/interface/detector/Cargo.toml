@@ -10,6 +10,7 @@ geo.workspace = true
 anyhow.workspace = true
 interface-image.workspace = true
 interface-model.workspace = true
+serde = { workspace = true, features = ["derive"] }
 
 [dev-dependencies]
 approx.workspace = true

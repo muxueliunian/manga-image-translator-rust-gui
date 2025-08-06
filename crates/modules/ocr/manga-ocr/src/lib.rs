@@ -1,12 +1,13 @@
 use std::{cmp::Ordering, path::PathBuf};
 
-use base_util::{error::PreProcessingError, onnx::new_session};
+use base_util::{
+    error::PreProcessingError,
+    onnx::{new_session, Providers},
+};
 use image::{DynamicImage, GenericImageView, RgbImage};
 use interface_detector::textlines::Quadrilateral;
 use interface_image::{ImageOp, Mask};
-use interface_model::{
-    impl_model_load_helpers, CreateData, Model, ModelLoad, ModelLoadError, ModelSource,
-};
+use interface_model::{impl_model_load_helpers, Model, ModelLoad, ModelLoadError, ModelSource};
 use interface_ocr::QuadrilateralInfo;
 use maplit::hashmap;
 use ndarray::{s, stack, Array2, Array4, Axis};
@@ -38,15 +39,15 @@ impl MangaOCRModels {
 
 pub struct MangaOCR {
     models: Option<MangaOCRModels>,
-    db: CreateData,
+    providers: Vec<Providers>,
     max_length: usize,
 }
 
 impl MangaOCR {
-    pub fn new(db: CreateData, max_length: usize) -> Self {
+    pub fn new(providers: Vec<Providers>, max_length: usize) -> Self {
         Self {
             models: None,
-            db,
+            providers,
             max_length,
         }
     }
@@ -62,12 +63,7 @@ impl ModelLoad for MangaOCR {
         let enc = self.download_model("enc", "encoder_model.onnx")?;
         let dec = self.download_model("dec", "decoder_model.onnx")?;
         let voc = self.download_model("vocab", "vocab.txt")?;
-        self.models = Some(MangaOCRModels::new(
-            enc,
-            dec,
-            voc,
-            self.db.providers.clone(),
-        )?);
+        self.models = Some(MangaOCRModels::new(enc, dec, voc, self.providers.clone())?);
         Ok(self.models.as_mut().unwrap())
     }
 
@@ -184,9 +180,9 @@ fn preprocessor(
 
 #[cfg(test)]
 mod tests {
+    use base_util::onnx::all_providers;
     use interface_detector::textlines::Quadrilateral;
     use interface_image::{CpuImageProcessor, ImageOp, RawImage};
-    use interface_model::CreateData;
     use interface_ocr::Ocr as _;
 
     use crate::MangaOCR;
@@ -195,7 +191,7 @@ mod tests {
     fn ocr_test() {
         let img = RawImage::new("./imgs/232265329-6a560438-e887-4f7f-b6a1-a61b8648f781.png")
             .expect("Failed to load image");
-        let mut mocr = MangaOCR::new(CreateData::all(), 255);
+        let mut mocr = MangaOCR::new(all_providers(), 255);
         let inp = vec![
             Quadrilateral::new(vec![(208, 4), (246, 4), (246, 192), (208, 192)], 1.0),
             Quadrilateral::new(vec![(76, 1788), (128, 1788), (128, 1930), (76, 1930)], 1.0),

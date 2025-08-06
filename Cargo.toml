@@ -1,7 +1,7 @@
 [workspace]
 resolver = "3"
 members = [
-    "crates/base-util",
+    "crates/base-util", "crates/densecrf",
     "crates/interface/*",
     "crates/modules/detector/*",
     "crates/modules/inpainter/*",
@@ -11,6 +11,7 @@ members = [
     "crates/modules/watermarks/rexiv",
     "crates/py-bindings",
     "crates/runtimes/simple-runtime",
+    "crates/textline-merge",
     "crates/util",
 ]
 
@@ -28,14 +29,16 @@ anyhow = "1.0.98"
 util = { path = "crates/util" }
 opencv = { version = "0.95", default-features = false }
 fast_image_resize = "5.2"
-tokio = "1.47.0"
+tokio = "1.47"
 env_logger = "0.11.8"
 ort = { version = "2.0.0-rc.10" }
 ndarray = "0.16.1"
 tiny-skia = "0.11.4"
 geo = "0.30.0"
 dbnet = { path = "crates/modules/detector/dbnet" }
+ctd = { path = "crates/modules/detector/ctd" }
 paddle = { path = "crates/modules/detector/paddle" }
+textline-merge = { path = "crates/textline-merge" }
 ureq = "3.0.12"
 tempfile = "3.20.0"
 flate2 = "1.1.2"
@@ -49,6 +52,14 @@ interface-image = { path = "crates/interface/image" }
 interface-detector = { path = "crates/interface/detector" }
 interface-ocr = { path = "crates/interface/ocr" }
 interface-upscaler = { path = "crates/interface/upscaler" }
+interface-translator = { path = "crates/interface/translator" }
+waifu2x = { path = "crates/modules/upscaler/waifu2x" }
+anime4k = { path = "crates/modules/upscaler/anime4k" }
+esrgan = { path = "crates/modules/upscaler/esrgan" }
+lama_aot = { path = "crates/modules/inpainter/lama_aot" }
+lama_large = { path = "crates/modules/inpainter/lama_large" }
+lama_mpe = { path = "crates/modules/inpainter/lama_mpe" }
+manga-ocr = { path = "crates/modules/ocr/manga-ocr" }
 show-image = "0.13"
 thiserror = "2.0.12"
 parking_lot = "0.12.4"
@@ -66,6 +77,7 @@ clap = "4.5.42"
 walkdir = "2.5.0"
 config = { version = "0.15.13" }
 serde = "1.0.219"
+ab_glyph = "0.2.31"
 
 [patch.crates-io]
 clipper2c-sys = { git = "https://github.com/tirithen/clipper2c-sys" }
