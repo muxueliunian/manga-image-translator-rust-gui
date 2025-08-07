@@ -140,7 +140,7 @@ dependencies = [
  "anyhow",
  "async-trait",
  "ct2rs",
- "interface-model 0.8.1",
+ "interface-model 0.8.12 (git+https://github.com/frederik-uni/manga-image-translator-rust?branch=master)",
  "reqwest",
  "rust_tokenizers",
  "thiserror 2.0.12",
@@ -153,10 +153,10 @@ source = "git+https://github.com/frederik-uni/aio-translator#c80bd88b254ebdc6520
 dependencies = [
  "aio-translator-interface",
  "anyhow",
- "base-util 0.8.1",
+ "base-util 0.8.12 (git+https://github.com/frederik-uni/manga-image-translator-rust?branch=master)",
  "ct2rs",
  "env_logger 0.11.8",
- "interface-model 0.8.1",
+ "interface-model 0.8.12 (git+https://github.com/frederik-uni/manga-image-translator-rust?branch=master)",
  "log",
  "maplit",
 ]
@@ -194,10 +194,10 @@ source = "git+https://github.com/frederik-uni/aio-translator#c80bd88b254ebdc6520
 dependencies = [
  "aio-translator-interface",
  "anyhow",
- "base-util 0.8.1",
+ "base-util 0.8.12 (git+https://github.com/frederik-uni/manga-image-translator-rust?branch=master)",
  "ct2rs",
  "env_logger 0.11.8",
- "interface-model 0.8.1",
+ "interface-model 0.8.12 (git+https://github.com/frederik-uni/manga-image-translator-rust?branch=master)",
  "maplit",
 ]
 
@@ -208,10 +208,10 @@ source = "git+https://github.com/frederik-uni/aio-translator#c80bd88b254ebdc6520
 dependencies = [
  "aio-translator-interface",
  "anyhow",
- "base-util 0.8.1",
+ "base-util 0.8.12 (git+https://github.com/frederik-uni/manga-image-translator-rust?branch=master)",
  "ct2rs",
  "env_logger 0.11.8",
- "interface-model 0.8.1",
+ "interface-model 0.8.12 (git+https://github.com/frederik-uni/manga-image-translator-rust?branch=master)",
  "maplit",
 ]
 
@@ -234,10 +234,10 @@ source = "git+https://github.com/frederik-uni/aio-translator#c80bd88b254ebdc6520
 dependencies = [
  "aio-translator-interface",
  "anyhow",
- "base-util 0.8.1",
+ "base-util 0.8.12 (git+https://github.com/frederik-uni/manga-image-translator-rust?branch=master)",
  "ct2rs",
  "env_logger 0.11.8",
- "interface-model 0.8.1",
+ "interface-model 0.8.12 (git+https://github.com/frederik-uni/manga-image-translator-rust?branch=master)",
  "maplit",
 ]
 
@@ -282,10 +282,10 @@ source = "git+https://github.com/frederik-uni/aio-translator#c80bd88b254ebdc6520
 dependencies = [
  "aio-translator-interface",
  "anyhow",
- "base-util 0.8.1",
+ "base-util 0.8.12 (git+https://github.com/frederik-uni/manga-image-translator-rust?branch=master)",
  "ct2rs",
  "env_logger 0.11.8",
- "interface-model 0.8.1",
+ "interface-model 0.8.12 (git+https://github.com/frederik-uni/manga-image-translator-rust?branch=master)",
  "maplit",
  "regex",
 ]
@@ -550,11 +550,12 @@ dependencies = [
 
 [[package]]
 name = "base-util"
-version = "0.8.1"
-source = "git+https://github.com/frederik-uni/manga-image-translator-rust?branch=master#933a3fb3731a38c92724aafc718a49a766cdbdfd"
+version = "0.8.12"
 dependencies = [
  "anyhow",
  "ndarray",
+ "opencv",
+ "ort",
  "thiserror 2.0.12",
  "ureq 3.0.12",
 ]
@@ -562,11 +563,10 @@ dependencies = [
 [[package]]
 name = "base-util"
 version = "0.8.12"
+source = "git+https://github.com/frederik-uni/manga-image-translator-rust?branch=master#b1523bd42e31686ef9929336a0b7bcc2211cb1f3"
 dependencies = [
  "anyhow",
  "ndarray",
- "opencv",
- "ort",
  "thiserror 2.0.12",
  "ureq 3.0.12",
 ]
@@ -1164,7 +1164,7 @@ dependencies = [
 [[package]]
 name = "ct2rs"
 version = "0.9.7"
-source = "git+https://github.com/frederik-uni/ctranslate2-rs?branch=use-with-dynamic-linking#cb1ec335a44106e4820aef5ca828dd4fd9e5b31b"
+source = "git+https://github.com/frederik-uni/ctranslate2-rs?branch=use-with-dynamic-linking#d84b59be62a9cfb1c86c0add5533c5302344f76d"
 dependencies = [
  "anyhow",
  "cmake",
@@ -1196,9 +1196,9 @@ dependencies = [
 
 [[package]]
 name = "cxx"
-version = "1.0.163"
+version = "1.0.164"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2d637cb7f62fc2eb3afa51c188836ca00ff806acdc0e188dd11a4445ef19410c"
+checksum = "635d77fac8a67ea3f5fa1fa5ae3632a990c1ae3fb032a35909454440f242a493"
 dependencies = [
  "cc",
  "cxxbridge-cmd",
@@ -1210,9 +1210,9 @@ dependencies = [
 
 [[package]]
 name = "cxx-build"
-version = "1.0.163"
+version = "1.0.164"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "273134333a948834ca649a0f0dc9fa79b59c33d6b7b5d278327a343ceed3dbe8"
+checksum = "84cf3d5e5caa17e1d86ada2a773863c5b3537ac3ff15f22b17958d9b4628cfd6"
 dependencies = [
  "cc",
  "codespan-reporting",
@@ -1225,9 +1225,9 @@ dependencies = [
 
 [[package]]
 name = "cxxbridge-cmd"
-version = "1.0.163"
+version = "1.0.164"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0c74939fe6eb7435df32b135a23b17ef7e51fe812b8f822f79d0db69ef4bf17e"
+checksum = "0fb15efd6f5bc4d9e932df88b017b8e1596bcff6ea2ab4e5514bb534d956158e"
 dependencies = [
  "clap 4.5.43",
  "codespan-reporting",
@@ -1239,15 +1239,15 @@ dependencies = [
 
 [[package]]
 name = "cxxbridge-flags"
-version = "1.0.163"
+version = "1.0.164"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9dcf9579776ab9e8bcf6d5812502290c56d14cb52eb6ef3c535896905e932f47"
+checksum = "b0dbbd6d062bb9c2d5b16b897f427d82972c7e1641dfe8c124df6baf4f82c2aa"
 
 [[package]]
 name = "cxxbridge-macro"
-version = "1.0.163"
+version = "1.0.164"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3a95b7b8f26cd857a05d3741a91def8b0dd0acb18cc3801adeffbc64d5b2215d"
+checksum = "6b6f789577a4ee64be1aed84f5a1baa8b76fcbc993337f19570a0222a91fd9c0"
 dependencies = [
  "indexmap",
  "proc-macro2 1.0.95",
@@ -2531,10 +2531,10 @@ dependencies = [
 
 [[package]]
 name = "interface-model"
-version = "0.8.1"
-source = "git+https://github.com/frederik-uni/manga-image-translator-rust?branch=master#933a3fb3731a38c92724aafc718a49a766cdbdfd"
+version = "0.8.12"
 dependencies = [
- "base-util 0.8.1",
+ "base-util 0.8.12",
+ "env_logger 0.11.8",
  "flate2",
  "indicatif",
  "log",
@@ -2548,9 +2548,9 @@ dependencies = [
 [[package]]
 name = "interface-model"
 version = "0.8.12"
+source = "git+https://github.com/frederik-uni/manga-image-translator-rust?branch=master#b1523bd42e31686ef9929336a0b7bcc2211cb1f3"
 dependencies = [
- "base-util 0.8.12",
- "env_logger 0.11.8",
+ "base-util 0.8.12 (git+https://github.com/frederik-uni/manga-image-translator-rust?branch=master)",
  "flate2",
  "indicatif",
  "log",
