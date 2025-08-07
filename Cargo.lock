@@ -792,7 +792,7 @@ dependencies = [
 [[package]]
 name = "base-util"
 version = "0.8.12"
-source = "git+https://github.com/frederik-uni/manga-image-translator-rust?branch=master#71be8e6d69b330be412efb8a7c5bb51b2c0f3e37"
+source = "git+https://github.com/frederik-uni/manga-image-translator-rust?branch=master#555833d1fc3528f736a0fc1c5ef910641baec790"
 dependencies = [
  "anyhow",
  "ndarray",
@@ -920,9 +920,9 @@ checksum = "46c5e41b57b8bba42a04676d81cb89e9ee8e859a1a66f80a5a72e1cb76b34d43"
 
 [[package]]
 name = "bytemuck"
-version = "1.23.1"
+version = "1.23.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5c76a5792e44e4abe34d3abf15636779261d45a7450612059293d1d2cfc63422"
+checksum = "3995eaeebcdf32f91f980d360f78732ddc061097ab4e39991ae7a6ace9194677"
 dependencies = [
  "bytemuck_derive",
 ]
@@ -1547,7 +1547,7 @@ dependencies = [
 [[package]]
 name = "ct2rs"
 version = "0.9.7"
-source = "git+https://github.com/frederik-uni/ctranslate2-rs?branch=use-with-dynamic-linking#686927533140da32cdd31c3f0b3e513fdccb9673"
+source = "git+https://github.com/frederik-uni/ctranslate2-rs?branch=use-with-dynamic-linking#97aa3377a25f083015b3f3d8ca39a77de75fcac6"
 dependencies = [
  "anyhow",
  "cmake",
@@ -3371,7 +3371,7 @@ dependencies = [
 [[package]]
 name = "interface-model"
 version = "0.8.12"
-source = "git+https://github.com/frederik-uni/manga-image-translator-rust?branch=master#71be8e6d69b330be412efb8a7c5bb51b2c0f3e37"
+source = "git+https://github.com/frederik-uni/manga-image-translator-rust?branch=master#555833d1fc3528f736a0fc1c5ef910641baec790"
 dependencies = [
  "base-util 0.8.12 (git+https://github.com/frederik-uni/manga-image-translator-rust?branch=master)",
  "flate2",
