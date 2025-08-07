@@ -10,6 +10,43 @@ use crate::ui::components::file_upload_button;
 #[derive(serde::Deserialize, serde::Serialize, Default)]
 pub struct MitApp {
     files: Vec<PathBuf>,
+    file_sidebar: bool,
+    settings: Settings,
+}
+
+#[derive(serde::Deserialize, serde::Serialize, Default)]
+pub struct Settings {
+    panel: SettingsPanel,
+    display_settings: DisplaySettings,
+}
+// tools
+// unfocused: mask brush, mark text areas, upscale,
+// focused: fontsize, fontweight, fontstyle, edit text, translation, make draggable/resizable
+#[derive(serde::Deserialize, serde::Serialize)]
+struct DisplaySettings {
+    display_image: bool,
+    display_overlay: bool,
+    display_text: bool,
+    display_translation: bool,
+}
+
+impl Default for DisplaySettings {
+    fn default() -> Self {
+        Self {
+            display_image: true,
+            display_overlay: true,
+            display_text: true,
+            display_translation: true,
+        }
+    }
+}
+
+#[derive(serde::Deserialize, serde::Serialize, Default)]
+enum SettingsPanel {
+    Display,
+    Models, //load, unload
+    #[default]
+    Tools,
 }
 
 impl MitApp {
