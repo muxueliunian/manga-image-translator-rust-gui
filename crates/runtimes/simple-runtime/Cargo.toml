@@ -15,7 +15,7 @@ config = { workspace = true, features = [
     "yaml",
 ] }
 serde = { workspace = true, features = ["derive"] }
-
+opencv = { workspace = true, features = ["imgproc"] }
 interface-detector.workspace = true
 interface-upscaler.workspace = true
 interface-inpainter.workspace = true
@@ -42,6 +42,8 @@ imageproc.workspace = true
 ab_glyph.workspace = true
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
 env_logger.workspace = true
+mask-refinement.workspace = true
+serde_json.workspace = true
 
 # ui
 egui = "0.32"

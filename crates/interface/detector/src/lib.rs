@@ -4,11 +4,12 @@ pub mod textlines;
 use base_util::RawSerializable;
 use interface_image::{ImageOp, Mask, RawImage};
 use interface_model::Model;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 use crate::textlines::Quadrilateral;
 
-#[derive(Default, Clone, Copy, Deserialize)]
+#[derive(Default, Clone, Copy, Deserialize, Serialize)]
+#[serde(default)]
 pub struct PreprocessorOptions {
     /// Invert the image colors for detection. Might improve detection.
     pub invert: bool,
@@ -69,8 +70,9 @@ pub trait Detector: Model {
     ) -> anyhow::Result<(Vec<Quadrilateral>, Mask)>;
 }
 
-#[derive(Clone, Copy, Deserialize)]
+#[derive(Clone, Copy, Deserialize, Serialize)]
 #[repr(C)]
+#[serde(default)]
 pub struct DefaultOptions {
     /// Text detector used for creating a text mask from an image
     /// TODO: guide

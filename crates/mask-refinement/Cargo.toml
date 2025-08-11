@@ -1,0 +1,11 @@
+[package]
+name = "mask-refinement"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+textline-merge.workspace = true
+interface-image.workspace = true
+interface-detector.workspace = true
+opencv = { workspace = true, features = ["imgproc"] }
+ndarray.workspace = true

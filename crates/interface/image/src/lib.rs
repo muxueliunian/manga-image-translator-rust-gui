@@ -102,6 +102,9 @@ pub struct Mask {
 }
 
 impl Mask {
+    pub fn get(&self, x: usize, y: usize) -> u8 {
+        self.data[x + y * self.width as usize]
+    }
     pub fn as_opencv_mat<'a>(&'a self) -> Result<Mat, opencv::Error> {
         let mat = Mat::from_slice(&self.data)?;
         let mat = mat.reshape(1, self.height as i32)?.clone_pointee();

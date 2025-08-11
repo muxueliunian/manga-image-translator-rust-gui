@@ -4,6 +4,8 @@ members = [
     "crates/base-util",
     "crates/densecrf",
     "crates/interface/*",
+    "crates/kumiko",
+    "crates/mask-refinement",
     "crates/modules/detector/*",
     "crates/modules/inpainter/*",
     "crates/modules/ocr/*",
@@ -61,6 +63,7 @@ lama_aot = { path = "crates/modules/inpainter/lama_aot" }
 lama_large = { path = "crates/modules/inpainter/lama_large" }
 lama_mpe = { path = "crates/modules/inpainter/lama_mpe" }
 manga-ocr = { path = "crates/modules/ocr/manga-ocr" }
+mask-refinement = { path = "crates/mask-refinement" }
 show-image = "0.13"
 thiserror = "2.0.12"
 parking_lot = "0.12.4"
@@ -80,6 +83,7 @@ config = { version = "0.15.13" }
 serde = "1.0.219"
 ab_glyph = "0.2.31"
 ordered-float = { version = "5" }
+serde_json = "1.0.142"
 
 [patch.crates-io]
 clipper2c-sys = { git = "https://github.com/tirithen/clipper2c-sys" }
