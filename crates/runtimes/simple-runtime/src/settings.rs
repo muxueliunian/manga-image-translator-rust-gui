@@ -1,8 +1,12 @@
+use std::collections::{HashMap, HashSet};
+
 use interface_detector::{DefaultOptions, PreprocessorOptions};
-use serde::Deserialize;
+use interface_translator::Language;
+use serde::{Deserialize, Serialize};
 use strum_macros::EnumIter;
 
-#[derive(Deserialize, Default)]
+#[derive(Serialize, Deserialize, Default)]
+#[serde(default)]
 /// Settings for the simple runtime
 pub struct Settings {
     /// Settings for the upscaler module
@@ -18,19 +22,77 @@ pub struct Settings {
     /// Settings for the translator module
     pub translator: TranslatorSettings,
 }
-#[derive(Deserialize, Default)]
+#[derive(Serialize, Deserialize, Default)]
 pub struct TranslatorSettings {
     pub translator: Translator,
 }
 
-#[derive(Deserialize, Default, EnumIter, Hash, PartialEq, Eq, Copy, Clone)]
+// #[derive(Deserialize)]
+// #[serde(untagged)]
+pub enum Target {
+    Single(SingleOrMultiple),
+    Selective(HashMap<Option<Language>, SingleOrMultiple>),
+}
+
+impl Target {
+    pub fn validate(&self) -> Option<&'static str> {
+        match self {
+            Target::Single(_) => None,
+            Target::Selective(hash_map) => {
+                if hash_map.get(&None).is_none() {
+                    return Some("no default");
+                };
+                for mut key in hash_map.keys().cloned() {
+                    let mut keys_used = HashSet::new();
+                    loop {
+                        let value = hash_map.get(&key);
+                        let value = match value {
+                            Some(v) => v,
+                            None => return None,
+                        };
+                        let v = keys_used.insert(key);
+                        if !v {
+                            return Some("loop detected");
+                        }
+                        let next = match value {
+                            SingleOrMultiple::Single(translation) => translation.target,
+                            SingleOrMultiple::Multiple(translations) => {
+                                if translations.is_empty() {
+                                    return Some("empty array");
+                                }
+                                translations.last().unwrap().target
+                            }
+                        };
+                        key = Some(next);
+                    }
+                }
+                None
+            }
+        }
+    }
+}
+
+#[derive(Hash, Eq, PartialEq)]
+// #[serde(untagged)]
+pub enum SingleOrMultiple {
+    Single(Translation),
+    Multiple(Vec<Translation>),
+}
+
+#[derive(Hash, Eq, PartialEq)]
+pub struct Translation {
+    translator: Translator,
+    target: Language,
+}
+
+#[derive(Serialize, Deserialize, Default, EnumIter, Hash, PartialEq, Eq, Copy, Clone)]
 pub enum OCR {
     #[default]
     MangaOcr,
     // Native,
     // Tesseract,
 }
-#[derive(Deserialize, Default, EnumIter, Hash, PartialEq, Eq, Copy, Clone)]
+#[derive(Serialize, Deserialize, Default, EnumIter, Hash, PartialEq, Eq, Copy, Clone)]
 pub enum Translator {
     JParaCrawlSmall,
     JParaCrawlBase,
@@ -52,7 +114,7 @@ pub enum Translator {
     Youdao,
 }
 
-#[derive(Deserialize, Default, EnumIter, Hash, PartialEq, Eq, Copy, Clone)]
+#[derive(Serialize, Deserialize, Default, EnumIter, Hash, PartialEq, Eq, Copy, Clone)]
 pub enum Detector {
     #[default]
     DBNet,
@@ -61,7 +123,7 @@ pub enum Detector {
     Ctd,
 }
 
-#[derive(Deserialize, Default, EnumIter, Hash, PartialEq, Eq, Copy, Clone)]
+#[derive(Serialize, Deserialize, Default, EnumIter, Hash, PartialEq, Eq, Copy, Clone)]
 pub enum Upscaler {
     Esrgan2x,
     #[default]
@@ -72,7 +134,7 @@ pub enum Upscaler {
     Waifu2xSwinUnetArt4x(Option<u8>),
     Anime4k,
 }
-#[derive(Deserialize, Default, EnumIter, Hash, PartialEq, Eq, Copy, Clone)]
+#[derive(Serialize, Deserialize, Default, EnumIter, Hash, PartialEq, Eq, Copy, Clone)]
 pub enum Inpainter {
     #[default]
     LamaAot,
@@ -80,42 +142,33 @@ pub enum Inpainter {
     LamaMpe,
 }
 
-#[derive(Deserialize, Default)]
+#[derive(Serialize, Deserialize, Default)]
+#[serde(default)]
 pub struct DetectorSettings {
-    #[serde(default = "default_detector")]
     pub detector: Detector,
-    #[serde(default = "default_preprocessor")]
     pub preprocessor: PreprocessorOptions,
     pub options: DefaultOptions,
 }
-#[derive(Deserialize, Default)]
+#[derive(Serialize, Deserialize, Default)]
+#[serde(default)]
 pub struct OCRSettings {
     pub ocr: OCR,
     pub min_text_length: usize,
     pub filter_text: Vec<String>,
     pub filter_lang: Vec<String>,
 }
-#[derive(Deserialize, Default)]
+#[derive(Serialize, Deserialize, Default)]
+#[serde(default)]
 pub struct InpainterSettings {}
-#[derive(Deserialize, Default)]
+
+#[derive(Serialize, Deserialize, Default)]
+#[serde(default)]
 pub struct RenderSettings {}
 
-#[derive(Deserialize, Default, Copy, Clone)]
+#[derive(Serialize, Deserialize, Default, Copy, Clone)]
+#[serde(default)]
 pub struct UpscalerSettings {
     pub upscaler: Option<Upscaler>,
     pub patch_size: Option<usize>,
-    #[serde(default = "default_padding")]
     pub padding: usize,
-}
-
-fn default_padding() -> usize {
-    10
-}
-
-fn default_detector() -> Detector {
-    Detector::default()
-}
-
-fn default_preprocessor() -> PreprocessorOptions {
-    PreprocessorOptions::default()
 }

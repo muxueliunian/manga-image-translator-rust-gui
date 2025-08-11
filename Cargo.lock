@@ -3630,6 +3630,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e2db585e1d738fc771bf08a151420d3ed193d9d895a36df7f6f8a9456b911ddc"
 
 [[package]]
+name = "kumiko"
+version = "0.8.12"
+dependencies = [
+ "image",
+ "itertools 0.14.0",
+ "opencv",
+ "ordered-float",
+]
+
+[[package]]
 name = "lama_aot"
 version = "0.8.12"
 dependencies = [
@@ -3868,6 +3878,17 @@ dependencies = [
  "string_cache",
  "string_cache_codegen",
  "tendril",
+]
+
+[[package]]
+name = "mask-refinement"
+version = "0.8.12"
+dependencies = [
+ "interface-detector",
+ "interface-image",
+ "ndarray",
+ "opencv",
+ "textline-merge",
 ]
 
 [[package]]
@@ -6173,9 +6194,12 @@ dependencies = [
  "lama_mpe",
  "log",
  "manga-ocr",
+ "mask-refinement",
+ "opencv",
  "paddle",
  "rfd",
  "serde",
+ "serde_json",
  "strum 0.27.2",
  "strum_macros 0.27.2",
  "textline-merge",

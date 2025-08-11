@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 use clap::Parser as _;
 use config::Config;
 use log::warn;
@@ -6,6 +8,7 @@ use walkdir::WalkDir;
 use crate::{settings::Settings, setup::Models};
 
 pub mod cli;
+mod debug;
 mod execute;
 pub mod settings;
 pub mod setup;
@@ -63,6 +66,15 @@ async fn main() {
         input = input
             .into_iter()
             .filter(|v| !cli.output.join(v).exists())
+            .filter(|v| {
+                ["png", "jpg", "jpeg", "webp"].contains(
+                    &v.extension()
+                        .map(|v| v.to_string_lossy())
+                        .unwrap_or_default()
+                        .to_lowercase()
+                        .as_str(),
+                )
+            })
             .collect::<Vec<_>>();
     }
     let mut models = Models::new(2, true, false).await;
@@ -73,6 +85,8 @@ async fn main() {
             continue;
         }
         let img = image::open(path).unwrap();
-        models.execute(img, &settings).await;
+        models
+            .execute(img, &settings, Some(PathBuf::from("debug")))
+            .await;
     }
 }
