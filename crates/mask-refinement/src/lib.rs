@@ -18,7 +18,10 @@ use textline_merge::TextBlock;
 
 use crate::{
     bubble::is_ignore,
-    expand::{expand_right_quad, expand_right_to_connect, shrink_quad},
+    expand::{
+        expand_right_quad, expand_right_to_connect, expand_top_quad, expand_top_to_connect,
+        shrink_quad_right, shrink_quad_top,
+    },
 };
 
 pub enum Method {
@@ -31,16 +34,26 @@ pub fn expand(furi: bool, lines: &[[(i64, i64); 4]], mask: &Mask) -> Vec<Quadril
     let mut lines = lines.iter().rev().peekable();
     while let Some(line) = lines.next() {
         let line_ = Quadrilateral::new(line.to_vec(), 0.0);
-        if line_.vertical() && furi {
+        if furi {
             let peek = lines.peek();
-            out.push(Quadrilateral::new(
-                match peek {
-                    Some(n) => expand_right_to_connect(line, n),
-                    None => shrink_quad(expand_right_quad(*line, 2.0), mask),
-                }
-                .to_vec(),
-                0.0,
-            ));
+            match line_.vertical() {
+                true => out.push(Quadrilateral::new(
+                    match peek {
+                        Some(n) => expand_right_to_connect(line, n),
+                        None => shrink_quad_right(expand_right_quad(*line, 2.0), mask),
+                    }
+                    .to_vec(),
+                    0.0,
+                )),
+                false => out.push(Quadrilateral::new(
+                    match peek {
+                        Some(n) => expand_top_to_connect(line, n),
+                        None => shrink_quad_top(expand_top_quad(*line, 2.0), mask),
+                    }
+                    .to_vec(),
+                    0.0,
+                )),
+            }
         } else {
             out.push(line_);
         }

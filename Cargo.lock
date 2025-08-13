@@ -6197,6 +6197,7 @@ dependencies = [
  "mask-refinement",
  "opencv",
  "paddle",
+ "regex",
  "rfd",
  "serde",
  "serde_json",

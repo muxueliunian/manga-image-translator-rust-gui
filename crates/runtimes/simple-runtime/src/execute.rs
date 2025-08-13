@@ -3,7 +3,7 @@ use std::{fs::File, io::Write, path::PathBuf};
 use image::{DynamicImage, GrayImage};
 use interface_image::{CpuImageProcessor, ImageOp, RawImage};
 
-use crate::{debug::render_bboxes, settings::Settings, setup::Models};
+use crate::{debug::render_bboxes, dict::Dict, settings::Settings, setup::Models};
 
 impl Models {
     pub async fn execute(
@@ -81,7 +81,7 @@ impl Models {
             .get_ocr(config.ocr.ocr)
             .detect(&img, &areas, &img_processor)
             .unwrap();
-        let textblocks = textline_merge::dispatch_main(
+        let mut textblocks = textline_merge::dispatch_main(
             &textlines,
             img.width,
             img.height,
@@ -90,7 +90,15 @@ impl Models {
             &config.ocr.filter_text,
             &self.lang_detector,
         );
-        // todo: pre-dictionary
+
+        if let Some(pre_dict) = &config.translator.pre_dict {
+            //TODO: add caching
+            let dict = Dict::try_load(pre_dict);
+            for textblock in &mut textblocks {
+                textblock.text = dict.apply(&textblock.text);
+            }
+        }
+
         let translator = self.get_translator(config.translator.translator);
         let texts = textblocks
             .iter()
@@ -119,12 +127,13 @@ impl Models {
                 .unwrap()
                 .text
         };
+
         let mask_refined = mask_refinement::dispatch(
             &textblocks,
             &img,
             &mask,
             mask_refinement::Method::FillMask,
-            0,
+            5,
             true,
             &img_processor,
         );

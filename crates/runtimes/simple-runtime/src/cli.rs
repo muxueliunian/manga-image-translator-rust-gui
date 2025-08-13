@@ -26,10 +26,6 @@ pub struct Cli {
     #[arg(long)]
     pub overwrite: bool,
 
-    /// Use MTPE (Machine Translation Post-Editing)
-    #[arg(long)]
-    pub use_mtpe: bool,
-
     /// Prepare for manual typesetting by outputting blanked, inpainted images, and copies of the original image for reference
     #[arg(long)]
     pub prep_manual: bool,

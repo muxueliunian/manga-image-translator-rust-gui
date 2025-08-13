@@ -4,6 +4,7 @@ use std::path::PathBuf;
 
 use crate::ui::components::file_upload_button;
 use eframe::App;
+use egui::UiBuilder;
 
 #[derive(serde::Deserialize, serde::Serialize)]
 pub struct MitApp {
@@ -81,8 +82,11 @@ impl App for MitApp {
 
                 let offset = (available_size - button_size) / 2.0;
 
-                ui.allocate_ui_at_rect(
-                    egui::Rect::from_min_size(ui.min_rect().min + offset, button_size),
+                ui.scope_builder(
+                    UiBuilder::new().max_rect(egui::Rect::from_min_size(
+                        ui.min_rect().min + offset,
+                        button_size,
+                    )),
                     |ui| {
                         self.files.extend(file_upload_button(
                             ui,

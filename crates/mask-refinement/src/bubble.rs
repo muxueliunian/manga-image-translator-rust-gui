@@ -1,3 +1,11 @@
+use std::ops::Range;
+
+use ndarray::{Array3, Axis};
+use opencv::{
+    core::{Mat, MatTraitConst as _, MatTraitConstManual, CV_8U, CV_MAT_DEPTH},
+    imgproc::{threshold, THRESH_BINARY},
+};
+
 ///     Determine whether there are colors in non-black, gray, white, and other gray areas in an RGB color image.
 ///     params：
 ///     image -- np.array
@@ -43,14 +51,6 @@ fn convert(mat: &Mat) -> Result<Array3<f32>, ndarray::ShapeError> {
     let cols = mat.cols() as usize;
     Ok(Array3::from_shape_vec((rows, cols, 3), data)?.mapv(|x| x as f32))
 }
-
-use std::ops::Range;
-
-use ndarray::{Array3, Axis};
-use opencv::{
-    core::{Mat, MatTraitConst as _, MatTraitConstManual, CV_8U, CV_MAT_DEPTH},
-    imgproc::{threshold, THRESH_BINARY},
-};
 
 fn count_zero_pixels_in_range(
     mat: &Mat,
@@ -123,6 +123,7 @@ pub fn is_ignore((width, height): (u16, u16), region_img: &Mat, ignore_bubble: i
         THRESH_BINARY,
     )
     .unwrap();
+
     let mut total = 0;
     let mut val0 = 0;
     let (zeros, count) = count_zero_pixels_in_range(&binary_raw_mask, 0..2, 0..width as i32);
@@ -155,7 +156,6 @@ pub fn is_ignore((width, height): (u16, u16), region_img: &Mat, ignore_bubble: i
         return true;
     }
     // To determine if there is color, consider the colored text as invalid information and skip it without translation
-
     if check_color(region_img) {
         true
     } else {
