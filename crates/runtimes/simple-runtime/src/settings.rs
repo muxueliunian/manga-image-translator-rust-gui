@@ -11,20 +11,29 @@ use strum_macros::EnumIter;
 pub struct Settings {
     /// Settings for the upscaler module
     pub upscaler: UpscalerSettings,
+
     /// Settings for the detector module
     pub detector: DetectorSettings,
+
     /// Settings for the OCR module
     pub ocr: OCRSettings,
+
     /// Settings for the inpainter module
     pub inpainter: InpainterSettings,
-    /// Settings for the render module
-    pub render: RenderSettings,
+
     /// Settings for the translator module
     pub translator: TranslatorSettings,
+
+    /// Settings for the render module
+    pub render: RenderSettings,
 }
+
 #[derive(Serialize, Deserialize, Default)]
 pub struct TranslatorSettings {
     pub translator: Translator,
+    /// Filters out languages that should not be translated
+    pub filter_lang: Vec<String>,
+    pub pre_dict: Option<String>,
 }
 
 // #[derive(Deserialize)]
@@ -145,21 +154,66 @@ pub enum Inpainter {
 #[derive(Serialize, Deserialize, Default)]
 #[serde(default)]
 pub struct DetectorSettings {
+    /// Text detector used for creating a text mask from an image, DO NOT use craft for manga, it\'s not designed for it
     pub detector: Detector,
+    /// General Options to apply before detection
     pub preprocessor: PreprocessorOptions,
+    /// Detector specific options
     pub options: DefaultOptions,
+    // todo: skip mask generation
 }
 #[derive(Serialize, Deserialize, Default)]
 #[serde(default)]
 pub struct OCRSettings {
+    /// Optical character recognition (OCR) model to use
     pub ocr: OCR,
+    /// Minimum text length of a text region
     pub min_text_length: usize,
+    /// Filter regions by their text with a regex. Example usage: '.*badtext.*'
+    /// todo: regex
     pub filter_text: Vec<String>,
-    pub filter_lang: Vec<String>,
+    /// Minimum probability of a text region to be considered valid. If None, uses the model default
+    /// todo: not used
+    prob: Option<f32>,
+    /// Use bbox merge when Manga OCR inference.
+    /// todo: not used
+    use_mocr_merge: bool,
 }
-#[derive(Serialize, Deserialize, Default)]
+
+#[derive(Serialize, Deserialize)]
 #[serde(default)]
-pub struct InpainterSettings {}
+pub struct InpainterSettings {
+    /// Inpainting model to use
+    inpainter: Inpainter,
+    /// Size of image used for inpainting (too large will result in OOM)
+    inpainting_size: u32,
+    /// The threshold for ignoring text in non bubble areas, with valid values ranging from 1 to 50, does not ignore others. Recommendation 5 to 10. If it is too low, normal bubble areas may be ignored, and if it is too large, non bubble areas may be considered normal bubbles
+    pub ignore_bubble: Option<u8>,
+    /// By how much to extend the text mask to remove left-over text pixels of the original image.
+    mask_dilation_offset: u32,
+    /// Set the convolution kernel size of the text erasure area to completely clean up text residues"
+    kernel_size: u8,
+    sort: Option<Sort>,
+}
+
+#[derive(Serialize, Deserialize)]
+enum Sort {
+    Simple,
+    Advanced,
+}
+
+impl Default for InpainterSettings {
+    fn default() -> Self {
+        Self {
+            inpainter: Default::default(),
+            inpainting_size: 2048,
+            ignore_bubble: None,
+            sort: None,
+            kernel_size: 3,
+            mask_dilation_offset: 20,
+        }
+    }
+}
 
 #[derive(Serialize, Deserialize, Default)]
 #[serde(default)]

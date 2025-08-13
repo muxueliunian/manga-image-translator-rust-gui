@@ -9,6 +9,7 @@ use crate::{settings::Settings, setup::Models};
 
 pub mod cli;
 mod debug;
+mod dict;
 mod execute;
 pub mod settings;
 pub mod setup;

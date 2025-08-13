@@ -76,6 +76,58 @@ pub fn expand_right_to_connect(quad1: &Quad, quad2: &Quad) -> Quad {
     ]
 }
 
+pub fn expand_top_to_connect(quad1: &Quad, quad2: &Quad) -> Quad {
+    let tl1 = point_to_vec(quad1[0]);
+    let tr1 = point_to_vec(quad1[1]);
+    let br1 = point_to_vec(quad1[2]);
+    let bl1 = point_to_vec(quad1[3]);
+    let v1 = vec_sub(tr1, br1);
+    let bl2 = point_to_vec(quad2[3]);
+    let br2 = point_to_vec(quad2[1]);
+    let w = vec_sub(bl2, br2);
+    let v2 = vec_sub(tl1, bl1);
+    let d1 = v1.0 * w.1 - v1.1 * w.0;
+    let d2 = v2.0 * w.1 - v2.1 * w.0;
+    if d1 < (10.0_f64.powi(-9)) || d2 < (10.0_f64.powi(-9)) {
+        return *quad1;
+    }
+    let t1 = ((br2.0 - br1.0) * w.1 - (br2.1 - br1.1) * w.0) / d1;
+    let t2 = ((br2.0 - bl1.0) * w.1 - (br2.1 - bl1.1) * w.0) / d2;
+
+    let new_top = vec_add(vec_mul_scalar(v1, t1), tl1);
+    let new_bottom = vec_add(vec_mul_scalar(v2, t2), bl1);
+
+    [
+        (tl1.0 as i64, tl1.1 as i64),
+        (new_top.0.ceil() as i64, new_top.1.ceil() as i64),
+        (new_bottom.0.ceil() as i64, new_bottom.1.ceil() as i64),
+        (bl1.0 as i64, bl1.1 as i64),
+    ]
+}
+
+pub fn expand_top_quad(quad: [(i64, i64); 4], factor: f64) -> [(i64, i64); 4] {
+    let (top_left, top_right, bottom_right, bottom_left) = (quad[0], quad[1], quad[2], quad[3]);
+
+    let left_vec = (top_left.0 - bottom_left.0, top_left.1 - bottom_left.1);
+    let right_vec = (top_right.0 - bottom_right.0, top_right.1 - bottom_right.1);
+
+    let new_top_left = (
+        bottom_left.0 + (factor * left_vec.0 as f64) as i64,
+        bottom_left.1 + (factor * left_vec.1 as f64) as i64,
+    );
+    let new_top_right = (
+        bottom_right.0 + (factor * right_vec.0 as f64) as i64,
+        bottom_right.1 + (factor * right_vec.1 as f64) as i64,
+    );
+
+    [
+        new_top_left,  // moved upward
+        new_top_right, // moved upward
+        bottom_right,  // unchanged
+        bottom_left,   // unchanged
+    ]
+}
+
 pub fn expand_right_quad(quad: [(i64, i64); 4], factor: f64) -> [(i64, i64); 4] {
     let (top_left, top_right, bottom_right, bottom_left) = (quad[0], quad[1], quad[2], quad[3]);
 
@@ -132,7 +184,57 @@ fn sample_line_nonzero(mask: &Mask, start: (f64, f64), end: (f64, f64)) -> usize
     count
 }
 
-pub fn shrink_quad(quad: [(i64, i64); 4], mask: &Mask) -> [(i64, i64); 4] {
+pub fn shrink_quad_top(quad: [(i64, i64); 4], mask: &Mask) -> [(i64, i64); 4] {
+    let p1 = point_to_vec(quad[2]); // br
+    let p2 = point_to_vec(quad[3]); // bl
+    let mut tr = point_to_vec(quad[1]);
+    let mut tl = point_to_vec(quad[0]);
+
+    let v1 = vec_sub(tr, p1);
+    let v2 = vec_sub(tl, p2);
+    let len_v1 = (v1.0 * v1.0 + v1.1 * v1.1).sqrt();
+    let len_v2 = (v2.0 * v2.0 + v2.1 * v2.1).sqrt();
+
+    let half_len_v1 = len_v1 / 2.0;
+    let half_len_v2 = len_v2 / 2.0;
+
+    let dir_v1 = vec_normalize(v1);
+    let dir_v2 = vec_normalize(v2);
+    let step1 = vec_mul_scalar(dir_v1, -1.0);
+    let step2 = vec_mul_scalar(dir_v2, -1.0);
+
+    let mut moved_v1 = 0.0;
+    let mut moved_v2 = 0.0;
+    loop {
+        if moved_v1 >= half_len_v1 || moved_v2 >= half_len_v2 {
+            break;
+        }
+        let count = sample_line_nonzero(&mask, tr, tl);
+        if count > 2 {
+            break;
+        }
+
+        tr = vec_add(tr, step1);
+        tl = vec_add(tl, step2);
+
+        moved_v1 += 1.0;
+        moved_v2 += 1.0;
+    }
+
+    if moved_v1 < half_len_v1 || moved_v2 < half_len_v2 {
+        tr = vec_sub(tr, vec_mul_scalar(step1, 2.0));
+        tl = vec_sub(tl, vec_mul_scalar(step2, 2.0));
+    }
+
+    [
+        (tl.0 as i64, tl.1 as i64),
+        (tr.0 as i64, tr.1 as i64),
+        (p1.0 as i64, p1.1 as i64),
+        (p2.0 as i64, p2.1 as i64),
+    ]
+}
+
+pub fn shrink_quad_right(quad: [(i64, i64); 4], mask: &Mask) -> [(i64, i64); 4] {
     let p1 = point_to_vec(quad[0]);
     let p2 = point_to_vec(quad[3]);
     let mut tr = point_to_vec(quad[1]);
