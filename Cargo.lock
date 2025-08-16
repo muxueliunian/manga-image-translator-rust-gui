@@ -792,7 +792,7 @@ dependencies = [
 [[package]]
 name = "base-util"
 version = "0.8.12"
-source = "git+https://github.com/frederik-uni/manga-image-translator-rust?branch=master#62154f0022571dbad6278181c65b79d0184fe216"
+source = "git+https://github.com/frederik-uni/manga-image-translator-rust?branch=master#91e1a44dc86c4545ef8a7c06c5857ca972b9a02a"
 dependencies = [
  "anyhow",
  "ndarray",
@@ -1571,7 +1571,7 @@ dependencies = [
 [[package]]
 name = "ct2rs"
 version = "0.9.7"
-source = "git+https://github.com/frederik-uni/ctranslate2-rs?branch=use-with-dynamic-linking#21df92861bc9ede432aa19e384d0edf74f13e8eb"
+source = "git+https://github.com/frederik-uni/ctranslate2-rs?branch=use-with-dynamic-linking#fdf4b0f419d20aee292f36bb1780ca206ff6ae8c"
 dependencies = [
  "anyhow",
  "cmake",
@@ -3441,7 +3441,7 @@ dependencies = [
 [[package]]
 name = "interface-model"
 version = "0.8.12"
-source = "git+https://github.com/frederik-uni/manga-image-translator-rust?branch=master#62154f0022571dbad6278181c65b79d0184fe216"
+source = "git+https://github.com/frederik-uni/manga-image-translator-rust?branch=master#91e1a44dc86c4545ef8a7c06c5857ca972b9a02a"
 dependencies = [
  "base-util 0.8.12 (git+https://github.com/frederik-uni/manga-image-translator-rust?branch=master)",
  "flate2",

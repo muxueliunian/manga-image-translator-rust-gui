@@ -117,16 +117,13 @@ impl PngRenderer {
             .map(|v| OrderedFloat(*v))
             .max()
             .unwrap_or_default()
-            .ceil() as usize
-            + 200;
+            .ceil() as usize;
         let w = w
             .iter()
             .map(|v| OrderedFloat(*v))
             .max()
             .unwrap_or_default()
-            .ceil() as usize
-            + 200;
-        println!("Width: {}, Height: {}", w, h);
+            .ceil() as usize;
         let mut rgb = vec![[0_u8; 4]; h as usize * w as usize];
         let mut bg = vec![0_u8; h as usize * w as usize];
         for run in layouts {
@@ -140,8 +137,8 @@ impl PngRenderer {
                     |x, y, color| {
                         let x = (physical_glyph.x + x) as usize;
                         let y = (run.line_y as i32 + physical_glyph.y + y) as usize;
-                        rgb[x * w + y] = [color.r(), color.g(), color.b(), 255];
-                        bg[x * w + y] = glyph.metadata as u8;
+                        rgb[y * w + x] = [color.r(), color.g(), color.b(), 255];
+                        bg[y * w + x] = glyph.metadata as u8;
                     },
                 );
             }
@@ -250,20 +247,20 @@ mod tests {
         let mut renderer = PngRenderer::default();
         let block = TextBlock {
             align: cosmic_text::Align::Center,
-            default_font_size: 12.0,
+            default_font_size: 220.0,
             default_line_height: 1.2,
             vertical: false,
             size: (1000, 2000),
             texts: vec![Text {
                 text: "Hello world, this is a test".to_owned(),
                 letter_spacing: None,
-                color: None,
+                color: Some((255, 0, 0)),
                 bg_color: None,
                 stretch: None,
                 style: Style::Normal,
                 weight: None,
-                family: None,
-                font_size: 12.0,
+                family: Some("Arial".to_owned()),
+                font_size: 220.0,
                 line_height: 1.2,
             }],
         };
