@@ -44,6 +44,7 @@ runs:
         from wheel.wheelfile import WheelFile
         from pathlib import Path
         from typing import List
+        from typing import Optional
         import glob
         import sys
         import re
@@ -75,7 +76,7 @@ runs:
                 print("Error: Could not find OpenCV via Homebrew.")
                 return []
 
-        def find_dll_on_path_or_target(dll_name: str) -> Path | None:
+        def find_dll_on_path_or_target(dll_name: str) -> Optional[Path]:
             target_dir = Path("target") / "release"
             for dir in os.environ['PATH'].split(os.pathsep):
                 candidate = Path(dir) / dll_name

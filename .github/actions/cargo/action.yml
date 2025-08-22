@@ -120,7 +120,7 @@ runs:
                 done
         fi
 
-        find target/release -maxdepth 1 -type f \
+        find target/release -type f \
                   ! -name '.*' \
                   -name '*onnxruntime_providers*.*' \
                   -exec cp -u {} artifact/ \; || true
