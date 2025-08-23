@@ -143,10 +143,10 @@ jobs:
 
       - name: Create Release
         uses: softprops/action-gh-release@v1
+        # wheels-*/rusty_manga_image_translator-*.whl
         with:
           files: |
             release/manga-image-translator-*
-            wheels-*/rusty_manga_image_translator-*.whl
           draft: false
           prerelease: false
         env:
