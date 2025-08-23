@@ -27,7 +27,10 @@ runs:
     - name: Install pefile
       shell: bash
       if: ${{ inputs.os == 'windows' }}
-      run: pip install pefile
+      run: |
+        ls target/release/
+        ls target/release/ctranslate2-vendor/dyn
+        pip install pefile
     - name: Bundle OpenCV only
       if: ${{ inputs.os == 'macos' }}
       shell: bash
@@ -116,7 +119,7 @@ runs:
             dll_paths = []
 
             for entry in pe.DIRECTORY_ENTRY_IMPORT:
-                dll_name = entry.dll.decode('utf-8')
+                dll_name = entry.dll.decode('utf-8').strip()
                 dll_path = find_dll_on_path(dll_name)
                 if dll_path:
                     dll_paths.append(dll_path)
