@@ -57,6 +57,9 @@ runs:
           echo "❌ libcudnn.so not found in target/release"
           exit 1
         fi
+    - name: Log files
+      shell: bash
+      run: ls target/release
     - name: Prepare artifacts
       shell: bash
       run: |
