@@ -1,7 +1,9 @@
 use std::{fs::File, io::Write, path::PathBuf, sync::Arc};
 
+use export::Export;
 use image::{DynamicImage, GrayImage};
 use interface_image::{CpuImageProcessor, ImageOp, RawImage};
+use interface_inpainter::InpainterOptions;
 
 use crate::{debug::render_bboxes, dict::Dict, settings::Settings, setup::Models};
 
@@ -11,10 +13,10 @@ impl Models {
         img: DynamicImage,
         config: &Settings,
         debug_path: Option<PathBuf>,
-    ) {
+    ) -> Export {
         let img_processor =
             Arc::new(CpuImageProcessor::default()) as Arc<dyn ImageOp + Sync + Send>;
-
+        let orig_img = img.clone();
         let (mut img, mut alpha) = RawImage::rgba(img);
 
         if let Some(upscaler) = config.upscaler.upscaler {
@@ -107,6 +109,7 @@ impl Models {
             .filter(|v| !v.skip_translate)
             .map(|v| v.text.clone())
             .collect::<Vec<_>>();
+        //TODO: langs, translator chain, selective
         let translations = if translator.local() {
             translator
                 .translator_mut()
@@ -130,13 +133,20 @@ impl Models {
                 .text
         };
 
+        for (b, t) in textblocks
+            .iter_mut()
+            .filter(|v| !v.skip_translate)
+            .zip(translations)
+        {
+            b.translations.insert("translated".to_string(), t);
+        }
         let mask_refined = mask_refinement::dispatch(
             &textblocks,
             &img,
             &mask,
             mask_refinement::Method::FillMask,
-            5,
-            true,
+            config.inpainter.ignore_bubble.unwrap_or_default(),
+            config.inpainter.furi,
             &img_processor,
         );
 
@@ -147,8 +157,30 @@ impl Models {
                 .save(debug_path.join("4_mask_refined.png"))
                 .unwrap();
         }
-        // inpainting
-        // rgb => rgba
-        // rendering
+
+        let inpainted = self
+            .get_inpainter(config.inpainter.inpainter)
+            .inpaint(
+                &img,
+                mask,
+                InpainterOptions {
+                    inpainting_size: config.inpainter.inpainting_size,
+                    color: config.inpainter.inpaint_color,
+                },
+                &img_processor,
+            )
+            .unwrap();
+
+        Export::new(
+            orig_img,
+            match alpha {
+                Some(a) => inpainted.add_a(a),
+                None => inpainted,
+            }
+            .to_image()
+            .unwrap(),
+            textblocks,
+            None,
+        )
     }
 }

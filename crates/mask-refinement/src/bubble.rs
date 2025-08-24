@@ -109,7 +109,7 @@ fn count_zero_pixels_in_range(
 ///     # 4. Connected bubble issue:
 ///     # Reason: The current logic is entirely based on the local environment of a single text box and cannot detect whether there is a shared bubble structure spanning multiple text boxes.
 ///     # Consequence: Unable to handle cases where a large or complex-shaped bubble contains multiple independent text blocks, nor can it determine which part of the bubble corresponds to which text block.
-pub fn is_ignore((width, height): (u16, u16), region_img: &Mat, ignore_bubble: i32) -> bool {
+pub fn is_ignore((width, height): (u16, u16), region_img: &Mat, ignore_bubble: u8) -> bool {
     if ignore_bubble < 1 || ignore_bubble > 50 {
         return false;
     }

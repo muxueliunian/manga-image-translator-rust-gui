@@ -6352,6 +6352,7 @@ dependencies = [
  "egui",
  "env_logger 0.11.8",
  "esrgan",
+ "export",
  "image",
  "imageproc",
  "interface-detector",
@@ -6376,6 +6377,7 @@ dependencies = [
  "strum_macros 0.27.2",
  "textline-merge",
  "tokio",
+ "uuid",
  "waifu2x",
  "walkdir",
 ]

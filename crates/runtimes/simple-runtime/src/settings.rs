@@ -69,7 +69,10 @@ impl Target {
                                 if translations.is_empty() {
                                     return Some("empty array");
                                 }
-                                translations.last().unwrap().target
+                                translations
+                                    .last()
+                                    .expect("translations should not be empty")
+                                    .target
                             }
                         };
                         key = Some(next);
@@ -184,15 +187,18 @@ pub struct OCRSettings {
 #[serde(default)]
 pub struct InpainterSettings {
     /// Inpainting model to use
-    inpainter: Inpainter,
+    pub inpainter: Inpainter,
     /// Size of image used for inpainting (too large will result in OOM)
-    inpainting_size: u32,
+    pub inpainting_size: u16,
     /// The threshold for ignoring text in non bubble areas, with valid values ranging from 1 to 50, does not ignore others. Recommendation 5 to 10. If it is too low, normal bubble areas may be ignored, and if it is too large, non bubble areas may be considered normal bubbles
     pub ignore_bubble: Option<u8>,
     /// By how much to extend the text mask to remove left-over text pixels of the original image.
     mask_dilation_offset: u32,
     /// Set the convolution kernel size of the text erasure area to completely clean up text residues"
     kernel_size: u8,
+    pub furi: bool,
+    /// If no ai is used for inpainting than use this color
+    pub inpaint_color: [u8; 3],
     sort: Option<Sort>,
 }
 
@@ -211,6 +217,8 @@ impl Default for InpainterSettings {
             sort: None,
             kernel_size: 3,
             mask_dilation_offset: 20,
+            inpaint_color: [255; 3],
+            furi: false,
         }
     }
 }

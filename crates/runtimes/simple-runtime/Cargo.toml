@@ -46,6 +46,8 @@ tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
 env_logger.workspace = true
 mask-refinement.workspace = true
 serde_json.workspace = true
+uuid = { workspace = true, features = ["v4"] }
+export.workspace = true
 
 # ui
 egui = "0.32"

@@ -92,16 +92,6 @@ runs:
 
             return list(base_dir.glob(pattern))
 
-        def get_opencv_dylib_paths():
-            try:
-                prefix = subprocess.check_output(["brew", "--prefix", "opencv"], text=True).strip()
-                lib_dir = Path(prefix) / "lib"
-                pattern = str(lib_dir / "libopencv_*.dylib")
-                return [Path(p) for p in glob.glob(pattern)]
-            except subprocess.CalledProcessError:
-                print("Error: Could not find OpenCV via Homebrew.")
-                return []
-
         def find_binary_in_wheel(wheel: WheelFile, pattern: str) -> Optional[Path]:
             for name in wheel.namelist():
                 if name.endswith(pattern):
@@ -182,9 +172,11 @@ runs:
         def rewrite(original_wheel, new_wheel, targets_inside_wheel: list[tuple[str, Path, tuple[str, int]]], name: str):
             names = [x[0] for x in targets_inside_wheel]
             names.append(name)
-            for name in original_wheel.namelist():
-                if name not in names:
-                    new_wheel.writestr(name, original_wheel.read(name))
+            print("skipping", names)
+            for file_in_wheel in original_wheel.namelist():
+                if file_in_wheel not in names:
+                    print(f"copying {file_in_wheel}")
+                    new_wheel.writestr(file_in_wheel, original_wheel.read(file_in_wheel))
             for target in targets_inside_wheel:
                 new_wheel.write(target[1], arcname=target[0])
 

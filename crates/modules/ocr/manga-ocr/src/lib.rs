@@ -113,7 +113,7 @@ impl interface_ocr::Ocr for MangaOCR {
             )
         })
         .await?;
-        for area in areas {
+        for (index, area) in areas.iter().enumerate() {
             let bbox = area.aabb();
             let grayscale = grayscale.clone();
             let img = tokio::task::spawn_blocking(move || {
@@ -122,6 +122,11 @@ impl interface_ocr::Ocr for MangaOCR {
                 Mask::from(view.to_image())
             })
             .await?;
+            img.clone()
+                .to_image()
+                .unwrap()
+                .save(format!("ocr_{index}.png"))
+                .unwrap();
 
             texts.push(self.detect_patch(img, area.clone(), img_processor).await?);
         }

@@ -23,7 +23,13 @@ impl Dict {
         if content.contains("\n") {
             Self::new(content)
         } else {
-            Self::new(&read_to_string(content).unwrap())
+            Self::new(&match read_to_string(content) {
+                Ok(v) => v,
+                Err(_) => {
+                    error!("Failed to read dict from: {}", content);
+                    "".to_owned()
+                }
+            })
         }
     }
     pub fn new(content: &str) -> Self {
@@ -37,10 +43,10 @@ impl Dict {
                     v.0,
                     v.1.split("#")
                         .next()
-                        .unwrap()
+                        .unwrap_or_default()
                         .split("//")
                         .next()
-                        .unwrap()
+                        .unwrap_or_default()
                         .split_whitespace(),
                 )
             })
