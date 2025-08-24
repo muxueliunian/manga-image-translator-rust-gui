@@ -1,5 +1,5 @@
 mod mpe;
-use std::sync::Arc;
+use std::{ops::Deref, sync::Arc};
 
 use base_util::onnx::{new_session, Providers};
 use interface_image::{ImageOp, RawImage};
@@ -58,15 +58,19 @@ impl Model for LamaLargeInpainter {
 impl Inpainter for LamaLargeInpainter {
     fn inpaint(
         &mut self,
-        image: interface_image::RawImage,
+        image: &Arc<interface_image::RawImage>,
         mask: interface_image::Mask,
         options: InpainterOptions,
         img_processor: &Arc<dyn ImageOp + Send + Sync>,
     ) -> anyhow::Result<interface_image::RawImage> {
         let ho = image.height;
         let wo = image.width;
-        let (mut image, mask) =
-            lama_resize_image(image, mask, options.inpainting_size, img_processor);
+        let (mut image, mask) = lama_resize_image(
+            image.deref().clone(),
+            mask,
+            options.inpainting_size,
+            img_processor,
+        );
         let h = image.height;
         let w = image.width;
         image = interface_inpainter::remove_mask_area(image, &mask);
@@ -134,7 +138,7 @@ mod tests {
         let mask = Mask::from(mask);
         let mut inp = LamaLargeInpainter::new(vec![]);
         let v = inp
-            .inpaint(img, mask, Default::default(), &img_processor)
+            .inpaint(&Arc::new(img), mask, Default::default(), &img_processor)
             .unwrap();
         v.to_image().unwrap().save("inpainted.png").unwrap()
     }

@@ -10,7 +10,7 @@ pub struct Export {
     patches: Vec<Patch>,
 }
 
-pub fn convert<P: Pixel + PixelWithColorType, Container>(
+fn convert<P: Pixel + PixelWithColorType, Container>(
     img: &ImageBuffer<P, Container>,
     format: ImageFormat,
 ) -> Vec<u8>

@@ -137,6 +137,7 @@ pub struct TextBlock {
     bg_color: Option<(u8, u8, u8)>,
     pub skip_translate: bool,
     language: Option<Language>,
+    pub translations: HashMap<String, String>,
 }
 impl TextBlock {
     pub fn obb(&self) -> Option<OBB> {

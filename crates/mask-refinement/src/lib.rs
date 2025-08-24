@@ -65,7 +65,7 @@ pub fn dispatch(
     raw_img: &RawImage,
     raw_mask: &Mask,
     method: Method,
-    ignore_bubble: i32,
+    ignore_bubble: u8,
     furi: bool,
     image_op: &Arc<dyn ImageOp + Send + Sync>,
 ) -> Mask {

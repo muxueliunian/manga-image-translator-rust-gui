@@ -1,4 +1,4 @@
-use std::{collections::HashMap, sync::Arc};
+use std::{collections::HashMap, ops::Deref, sync::Arc};
 
 use interface_inpainter::{colorize_mask_area, Inpainter, InpainterOptions};
 use interface_model::Model;
@@ -49,12 +49,16 @@ impl Model for ColorInpainter {
 impl Inpainter for ColorInpainter {
     fn inpaint(
         &mut self,
-        image: interface_image::RawImage,
+        image: &Arc<interface_image::RawImage>,
         mask: interface_image::Mask,
         options: InpainterOptions,
         _: &Arc<dyn interface_image::ImageOp + Send + Sync>,
     ) -> anyhow::Result<interface_image::RawImage> {
-        Ok(colorize_mask_area(image, &mask, options.color))
+        Ok(colorize_mask_area(
+            image.deref().clone(),
+            &mask,
+            options.color,
+        ))
     }
 }
 
@@ -76,7 +80,7 @@ mod tests {
         let mask = Mask::from(mask);
         let mut inp = ColorInpainter::default();
         let v = inp
-            .inpaint(img, mask, Default::default(), &img_processor)
+            .inpaint(&Arc::new(img), mask, Default::default(), &img_processor)
             .unwrap();
         v.to_image().unwrap().save("inpainted.png").unwrap()
     }

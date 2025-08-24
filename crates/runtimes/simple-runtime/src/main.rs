@@ -1,8 +1,8 @@
-use std::path::PathBuf;
+use std::{fs::create_dir_all, path::PathBuf};
 
 use clap::Parser as _;
 use config::Config;
-use log::warn;
+use log::{error, warn};
 use walkdir::WalkDir;
 
 use crate::{settings::Settings, setup::Models};
@@ -39,7 +39,7 @@ async fn main() {
             native_options,
             Box::new(|cc| Ok(Box::new(ui::MitApp::new(cc)))),
         )
-        .unwrap();
+        .expect("Failed to run egui");
         return;
     }
     let cli = cli::Cli::parse();
@@ -86,9 +86,21 @@ async fn main() {
             warn!("File {} cant be found", path.display());
             continue;
         }
-        let img = image::open(path).unwrap();
-        models
-            .execute(img, &settings, Some(PathBuf::from("debug")))
-            .await;
+        let img = match image::open(path) {
+            Ok(img) => img,
+            Err(err) => {
+                error!("Failed to open image {}: {}", path.display(), err);
+                continue;
+            }
+        };
+        let debug_path = if cli.verbose > 2 {
+            let id = uuid::Uuid::new_v4();
+            let p = PathBuf::from(format!("debug/{}", id.to_string()));
+            create_dir_all(&p).expect("Failed to create debug directory");
+            Some(p)
+        } else {
+            None
+        };
+        models.execute(img, &settings, debug_path).await;
     }
 }

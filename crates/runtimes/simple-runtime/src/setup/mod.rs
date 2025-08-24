@@ -10,9 +10,11 @@ pub use upscaler::UpscalerType;
 pub use upscaler::Upscalers;
 
 use crate::settings::Detector;
+use crate::settings::Inpainter;
 use crate::settings::Translator;
 use crate::settings::Upscaler;
 use crate::settings::OCR;
+use crate::setup::inpainter::InpainterType;
 use crate::setup::inpainter::Inpainters;
 use crate::setup::ocr::OCRs;
 use crate::setup::ocr::OcrType;
@@ -41,8 +43,8 @@ impl Models {
     pub fn get_translator(&mut self, translator: Translator) -> &mut TranslatorType {
         self.translators.get(translator)
     }
-    pub fn get_inpainters(&mut self) -> &mut Inpainters {
-        &mut self.inpainters
+    pub fn get_inpainter(&mut self, inpainter: Inpainter) -> &mut InpainterType {
+        self.inpainters.get(inpainter)
     }
     pub async fn new(max_batch_size: usize, fast: bool, cuda: bool) -> Self {
         //TODO: providers based on input
