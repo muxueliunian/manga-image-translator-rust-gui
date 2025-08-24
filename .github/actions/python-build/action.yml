@@ -127,7 +127,7 @@ runs:
 
             for entry in pe.DIRECTORY_ENTRY_IMPORT:
 
-                dll_name = entry.dll.decode('utf-8').strip()
+                dll_name = entry.dll.decode('utf-8').strip().lower()
                 if dll_name in (s.lower() for s in SYSTEM_DLLS) or any(dll_name.startswith(p.lower()) for p in SYSTEM_PREFIXES):
                     continue
                 dll_path = find_dll_on_path(dll_name)

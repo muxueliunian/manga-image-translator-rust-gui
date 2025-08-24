@@ -117,11 +117,11 @@ jobs:
 
           # Define architectures and OSes
           declare -A bins=(
-            ["linux-x86_64"]="-linux-x86_64/simple-runtime"
-            ["linux-arm64"]="-linux-arm64/simple-runtime"
-            ["windows-x86_64"]="-windows-x86_64/simple-runtime.exe"
-            ["macos-x86_64"]="-macos-x86_64/simple-runtime"
-            ["macos-arm64"]="-macos-arm64/simple-runtime"
+            ["linux-x86_64"]="linux-x86_64/simple-runtime"
+            ["linux-arm64"]="linux-arm64/simple-runtime"
+            ["windows-x86_64"]="windows-x86_64/simple-runtime.exe"
+            ["macos-x86_64"]="macos-x86_64/simple-runtime"
+            ["macos-arm64"]="macos-arm64/simple-runtime"
           )
 
           for target in "${!bins[@]}"; do

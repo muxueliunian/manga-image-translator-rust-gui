@@ -76,14 +76,20 @@ runs:
             linux)
               echo "Collecting dependencies with ldd..."
               export LD_LIBRARY_PATH="$LD_LIBRARY_PATH:$(pwd)/target/release"
+              SYSTEM_LIBS_REGEX='^(libc\.so|libm\.so|libpthread\.so|librt\.so|libdl\.so|ld-linux|libgcc_s\.so)'
               copy_deps() {
                   local file="$1"
                   ldd "$file" | awk '{print $3}' | while read -r lib; do
                       if [ -n "$lib" ] && [ -f "$lib" ]; then
-                          if [ ! -f "artifact/$(basename "$lib")" ]; then
-                              cp -u "$lib" artifact/
-                              copy_deps "$lib"   # recurse into this lib
-                          fi
+                        base=$(basename "$lib")
+                        if [[ ! $base =~ $SYSTEM_LIBS_REGEX ]]; then
+                            if [ ! -f "artifact/$base" ]; then
+                                cp -u "$lib" artifact/
+                                copy_deps "$lib"
+                            fi
+                        else
+                            echo "⏩ Skipping system lib: $base"
+                        fi
                       else
                           echo "⚠️ File not found: $lib"
                       fi
@@ -143,10 +149,22 @@ runs:
                 done
         fi
 
-        find target/release -type f \
-                  ! -name '.*' \
-                  -name '*onnxruntime_providers*.*' \
-                  -exec cp -u {} artifact/ \; || true
+    - name: Copy ONNX Runtime providers
+      shell: bash
+      run: |
+        case "$RUNNER_OS" in
+          Windows)
+            pattern="onnxruntime_providers_*.dll"
+            ;;
+          macOS)
+            pattern="libonnxruntime_providers_*.dylib"
+            ;;
+          Linux)
+            pattern="libonnxruntime_providers_*.so"
+            ;;
+        esac
+
+        find target/release -type f -name "$pattern" -exec cp {} artifact/ \; || true
 
     - name: Upload artifacts
       uses: actions/upload-artifact@v4
