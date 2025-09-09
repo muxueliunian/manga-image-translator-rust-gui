@@ -27,7 +27,7 @@ fn get_runtime() -> &'static Runtime {
             .worker_threads(8)
             .enable_all()
             .build()
-            .unwrap()
+            .expect("Failed to create Tokio runtime")
     })
 }
 
@@ -49,8 +49,8 @@ pub fn textline_merge_dispatch(
     )>,
     width: u16,
     height: u16,
-) -> Vec<(String, Vec<Vec<(i64, i64)>>, f64)> {
-    let det = LangIdDetector::new().unwrap();
+) -> PyResult<Vec<(String, Vec<Vec<(i64, i64)>>, f64)>> {
+    let det = LangIdDetector::new().map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
     let items = items
         .into_iter()
         .map(|v| QuadrilateralInfo {
@@ -61,8 +61,10 @@ pub fn textline_merge_dispatch(
             pos: Arc::new(parking_lot::Mutex::new(Quadrilateral::new(v.1, v.2))),
         })
         .collect::<Vec<_>>();
-    let out = textline_merge::dispatch(&items, width, height, &det);
-    out.into_iter()
+    let out = textline_merge::dispatch(&items, width, height, &det)
+        .map_err(|v| PyRuntimeError::new_err(v.to_string()))?;
+    Ok(out
+        .into_iter()
         .map(|v| {
             (
                 v.text,
@@ -73,7 +75,7 @@ pub fn textline_merge_dispatch(
                 v.angle,
             )
         })
-        .collect::<Vec<_>>()
+        .collect::<Vec<_>>())
 }
 
 #[pymethods]
@@ -127,15 +129,15 @@ impl Session {
         }
     }
 
-    fn papago_translator<'py>(&self, py: Python<'py>) -> PyTranslator {
+    fn papago_translator<'py>(&self, py: Python<'py>) -> PyResult<PyTranslator> {
         let v = py.allow_threads(|| {
             get_runtime()
                 .block_on(interface_translator::PapagoTranslator::new(false))
-                .unwrap()
-        });
-        PyTranslator {
+                .map_err(|v| PyRuntimeError::new_err(v.to_string()))
+        })?;
+        Ok(PyTranslator {
             inner: Arc::new(Mutex::new(Box::new(v) as Box<dyn Translator + Send + Sync>)),
-        }
+        })
     }
     fn nllb_translator(&self, cuda: bool, big: bool) -> PyTranslator {
         PyTranslator {
@@ -328,30 +330,44 @@ impl PyTranslator {
         input: Vec<String>,
         from: &str,
         to: &str,
-    ) -> Vec<String> {
+    ) -> PyResult<Vec<String>> {
         py.allow_threads(|| {
             let mut t = self.inner.lock();
             if t.local() {
                 t.translator_mut()
                     .as_blocking()
-                    .unwrap()
+                    .ok_or(PyRuntimeError::new_err(
+                        "translator does not support blocking",
+                    ))?
                     .translate_vec(
                         &input,
                         None,
-                        Language::from_name(from).unwrap(),
-                        &Language::from_name(to).unwrap(),
+                        Language::from_name(from)
+                            .ok_or(PyRuntimeError::new_err("language not supported"))?,
+                        &Language::from_name(to)
+                            .ok_or(PyRuntimeError::new_err("language not supported"))?,
                     )
-                    .unwrap()
+                    .map_err(|v| PyRuntimeError::new_err(v.to_string()))
             } else {
                 let rt = get_runtime();
-                rt.block_on(t.translator().as_async().unwrap().translate_vec(
-                    &input,
-                    None,
-                    Some(Language::from_name(from).unwrap()),
-                    &Language::from_name(to).unwrap(),
-                ))
-                .unwrap()
-                .text
+                let temp = rt
+                    .block_on(
+                        t.translator()
+                            .as_async()
+                            .ok_or(PyRuntimeError::new_err("translator does not support async"))?
+                            .translate_vec(
+                                &input,
+                                None,
+                                Some(
+                                    Language::from_name(from)
+                                        .ok_or(PyRuntimeError::new_err("language not supported"))?,
+                                ),
+                                &Language::from_name(to)
+                                    .ok_or(PyRuntimeError::new_err("language not supported"))?,
+                            ),
+                    )
+                    .map_err(|v| PyRuntimeError::new_err(v.to_string()))?;
+                Ok(temp.text)
             }
         })
     }

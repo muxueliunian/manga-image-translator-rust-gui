@@ -115,7 +115,7 @@ impl Ocr for Ctc48pxOcr {
         let region_imgs = quadrilaterals
             .iter()
             .map(|(v, _)| get_transformed_region(&*v.lock(), &img, text_height))
-            .collect::<Vec<_>>();
+            .collect::<Result<Vec<_>, _>>()?;
 
         let (model, dict) = self.load()?;
         let dict = &*dict;

@@ -97,7 +97,7 @@ impl Models {
             vec![],
             &config.ocr.filter_text,
             &self.lang_detector,
-        );
+        )?;
 
         if let Some(pre_dict) = &config.translator.pre_dict {
             //TODO: add caching

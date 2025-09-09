@@ -18,7 +18,7 @@ textline-merge.workspace = true
 interface-translator.workspace = true
 interface-ocr.workspace = true
 tokio = { workspace = true, features = ["rt-multi-thread"] }
-
+anyhow.workspace = true
 [lib]
 name = "rusty_manga_image_translator"
 crate-type = ["cdylib"]

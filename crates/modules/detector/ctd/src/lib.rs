@@ -42,7 +42,7 @@ impl ModelLoad for CtdDetector {
             self.download_model("model", "model.onnx")?,
             self.providers.clone(),
         )?);
-        Ok(self.model.as_mut().unwrap())
+        Ok(self.model.as_mut().expect("Model was set before"))
     }
 
     fn get_model(&mut self) -> Option<&mut Self::T> {
