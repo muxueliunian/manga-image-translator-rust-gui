@@ -3,6 +3,7 @@ use std::{
     f64::consts::PI,
 };
 
+use anyhow::anyhow;
 use geo::{ConvexHull, Distance as _, Euclidean, MinimumRotatedRect, MultiPoint, Point};
 use interface_detector::textlines::MyPoint;
 use interface_ocr::QuadrilateralInfo;
@@ -24,8 +25,8 @@ pub fn dispatch(
     width: u16,
     height: u16,
     det: &dyn Detector,
-) -> Vec<TextBlock> {
-    merge_bboxes_text_region(textlines, width, height)
+) -> anyhow::Result<Vec<TextBlock>> {
+    merge_bboxes_text_region(textlines, width, height)?
         .into_iter()
         .map(|(txtlns, fg_color, bg_color)| {
             let mut total_logprobs = 0.0;
@@ -40,7 +41,8 @@ pub fn dispatch(
                 .map(|v| v.pos.lock().font_size() as u64)
                 .min()
                 .unwrap_or_default();
-            let mut angle = mean(txtlns.iter().map(|v| v.pos.lock().angle())).unwrap()
+            let mut angle = mean(txtlns.iter().map(|v| v.pos.lock().angle()))
+                .ok_or(anyhow!("no inputs"))?
                 * (180.0 / std::f64::consts::PI)
                 - 90.0;
             if angle.abs() < 3.0 {
@@ -62,7 +64,7 @@ pub fn dispatch(
                 (Some(r), Some(g), Some(b)) => Some((r as u8, g as u8, b as u8)),
                 _ => None,
             };
-            TextBlock::new(
+            Ok(TextBlock::new(
                 lines,
                 texts,
                 font_size,
@@ -71,7 +73,7 @@ pub fn dispatch(
                 fg_color,
                 bg_color,
                 det,
-            )
+            ))
         })
         .collect()
 }
@@ -259,14 +261,15 @@ impl TextBlock {
         }
     }
 
-    pub fn min_rect(&self) -> Vec<[(i64, i64); 4]> {
+    pub fn min_rect(&self) -> anyhow::Result<Vec<[(i64, i64); 4]>> {
         let polygons = self.unrotated_polygons();
-        let (min_x, min_y, max_x, max_y) = compute_bounds(&polygons).unwrap();
+        let (min_x, min_y, max_x, max_y) =
+            compute_bounds(&polygons).ok_or(anyhow::anyhow!("Failed to compute bounds"))?;
         let mut min_bbox = vec![[min_x, min_y, max_x, min_y, max_x, max_y, min_x, max_y]];
         if self.angle != 0.0 {
             min_bbox = rotate_polygons(self.center(), min_bbox, (-self.angle) as f32, None);
         }
-        min_bbox
+        Ok(min_bbox
             .into_iter()
             .map(|bbox| {
                 let clipped: Vec<i64> = bbox.iter().map(|&x| x.max(0)).collect();
@@ -277,7 +280,7 @@ impl TextBlock {
                     (clipped[6], clipped[7]),
                 ]
             })
-            .collect()
+            .collect())
     }
     pub fn xyxy(&self) -> (i64, i64, i64, i64) {
         let x = self
@@ -292,10 +295,10 @@ impl TextBlock {
             .collect::<Vec<_>>();
 
         (
-            *x.iter().min().unwrap(),
-            *y.iter().min().unwrap(),
-            *x.iter().max().unwrap(),
-            *y.iter().max().unwrap(),
+            x.iter().min().copied().unwrap_or_default(),
+            y.iter().min().copied().unwrap_or_default(),
+            x.iter().max().copied().unwrap_or_default(),
+            y.iter().max().copied().unwrap_or_default(),
         )
     }
 }
@@ -304,11 +307,13 @@ fn merge_bboxes_text_region(
     bboxes: &[QuadrilateralInfo],
     width: u16,
     height: u16,
-) -> Vec<(
-    Vec<&QuadrilateralInfo>,
-    (Option<f64>, Option<f64>, Option<f64>),
-    (Option<f64>, Option<f64>, Option<f64>),
-)> {
+) -> anyhow::Result<
+    Vec<(
+        Vec<&QuadrilateralInfo>,
+        (Option<f64>, Option<f64>, Option<f64>),
+        (Option<f64>, Option<f64>, Option<f64>),
+    )>,
+> {
     let mut graph: Graph<QuadrilateralInfo, (), petgraph::Undirected> = Graph::new_undirected();
 
     // step 1: divide into multiple text region candidates
@@ -333,7 +338,10 @@ fn merge_bboxes_text_region(
     // step 2: postprocess - further split each region
     let region_indices = connected_components_sets(&graph)
         .into_iter()
-        .flat_map(|v| split_text_region(bboxes, v, width, height, 0.5, 2.0))
+        .map(|v| split_text_region(bboxes, v, width, height, 0.5, 2.0))
+        .collect::<Result<Vec<_>, _>>()?
+        .into_iter()
+        .flatten()
         .collect::<Vec<_>>();
 
     // step 3: return regions
@@ -386,7 +394,7 @@ fn merge_bboxes_text_region(
             (txtlns, (fg_r, fg_g, fg_b), (bg_r, bg_g, bg_b))
         })
         .collect::<Vec<_>>();
-    v
+    Ok(v)
 }
 
 fn mean<I>(iter: I) -> Option<f64>
@@ -418,9 +426,9 @@ fn split_text_region(
     height: u16,
     gamma: f64,
     sigma: f64,
-) -> Vec<HashSet<NodeIndex>> {
+) -> anyhow::Result<Vec<HashSet<NodeIndex>>> {
     if connected_region_indices.len() == 1 {
-        return vec![connected_region_indices.into_iter().collect()];
+        return Ok(vec![connected_region_indices.into_iter().collect()]);
     }
 
     if connected_region_indices.len() == 2 {
@@ -433,12 +441,12 @@ fn split_text_region(
         if fb.pos.lock().distance(&sb.pos.lock(), 0.5) < (1.0 + gamma) * fs
             && (fb.pos.lock().angle() - sb.pos.lock().angle()).abs() < 0.2 * PI
         {
-            return vec![connected_region_indices.into_iter().collect()];
+            return Ok(vec![connected_region_indices.into_iter().collect()]);
         } else {
-            return vec![
+            return Ok(vec![
                 vec![connected_region_indices[0]].into_iter().collect(),
                 vec![connected_region_indices[1]].into_iter().collect(),
-            ];
+            ]);
         }
     }
 
@@ -473,7 +481,7 @@ fn split_text_region(
             _ => None,
         })
         .collect::<Vec<_>>();
-    edges.sort_by(|a, b| b.2.partial_cmp(&a.2).unwrap());
+    edges.sort_by(|a, b| OrderedFloat(b.2).cmp(&OrderedFloat(a.2)));
     let distances_sorted = edges.iter().map(|v| v.2).collect::<Vec<_>>();
 
     let fontsize = mean(
@@ -483,8 +491,9 @@ fn split_text_region(
     )
     .unwrap();
 
-    let distances_mean = mean(distances_sorted.iter().cloned()).unwrap();
-    let distances_std = stddev(&distances_sorted).unwrap();
+    let distances_mean =
+        mean(distances_sorted.iter().cloned()).ok_or(anyhow!("distances_sorted is empty"))?;
+    let distances_std = stddev(&distances_sorted).ok_or(anyhow!("distances_sorted is empty"))?;
     let std_threshold = f64::max(0.3 * fontsize + 5.0, 5.0);
     let (b1, b2) = (&bboxes[edges[0].0], &bboxes[edges[0].1]);
     let max_poly_distance = b1.pos.lock().poly_distance(&b2.pos.lock());
@@ -499,7 +508,7 @@ fn split_text_region(
         && (distances_std < std_threshold
             || max_poly_distance == 0.0 && max_centroid_alignment < 5.0)
     {
-        vec![connected_region_indices.into_iter().collect()]
+        Ok(vec![connected_region_indices.into_iter().collect()])
     } else {
         let mut graph: Graph<usize, (), petgraph::Undirected> = Graph::new_undirected();
         let mut map = HashMap::new();
@@ -510,10 +519,13 @@ fn split_text_region(
         for edge in &edges[1..] {
             graph.add_edge(*map.get(&edge.0).unwrap(), *map.get(&edge.1).unwrap(), ());
         }
-        connected_components_sets(&graph)
+        Ok(connected_components_sets(&graph)
             .into_iter()
-            .flat_map(|node_set| split_text_region(bboxes, node_set, width, height, gamma, sigma))
-            .collect()
+            .map(|node_set| split_text_region(bboxes, node_set, width, height, gamma, sigma))
+            .collect::<Result<Vec<_>, _>>()?
+            .into_iter()
+            .flatten()
+            .collect())
     }
 }
 
@@ -568,9 +580,9 @@ pub fn dispatch_main(
     skip_languages: Vec<Language>,
     remove_text: &Vec<String>,
     det: &dyn Detector,
-) -> Vec<TextBlock> {
-    let text_regions = dispatch(textlines, width, height, det);
-    text_regions
+) -> anyhow::Result<Vec<TextBlock>> {
+    let text_regions = dispatch(textlines, width, height, det)?;
+    Ok(text_regions
         .into_iter()
         .filter_map(|mut region| {
             let original_text = region.text;
@@ -608,7 +620,7 @@ pub fn dispatch_main(
                 Some(region)
             }
         })
-        .collect()
+        .collect())
 }
 
 fn remove_leading_spaces_after_predict(stripped_text: &str) -> String {

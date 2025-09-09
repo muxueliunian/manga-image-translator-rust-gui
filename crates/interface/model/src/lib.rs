@@ -13,7 +13,7 @@ pub trait ModelLoad {
     fn get_model(&mut self) -> Option<&mut Self::T>;
     fn load(&mut self) -> anyhow::Result<&mut Self::T> {
         if self.loaded() {
-            return Ok(self.get_model().unwrap());
+            return Ok(self.get_model().expect("Checked before"));
         }
         self.reload()
     }

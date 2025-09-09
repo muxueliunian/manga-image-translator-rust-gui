@@ -14,3 +14,4 @@ log.workspace = true
 once_cell.workspace = true
 interface-translator.workspace = true
 geo.workspace = true
+anyhow.workspace = true

@@ -1,3 +1,4 @@
+use anyhow::anyhow;
 use image::{DynamicImage, GenericImageView as _, RgbImage};
 use interface_detector::textlines::{MyPoint, Quadrilateral};
 use interface_image::RawImage;
@@ -10,14 +11,18 @@ use opencv::{
     imgproc::INTER_LINEAR,
 };
 
-pub fn get_transformed_region(q: &Quadrilateral, img: &RgbImage, text_height: u32) -> Mat {
+pub fn get_transformed_region(
+    q: &Quadrilateral,
+    img: &RgbImage,
+    text_height: u32,
+) -> anyhow::Result<Mat> {
     let [l1a, l1b, l2a, l2b] = <[MyPoint<f64>; 4]>::try_from(
         q.structure()
             .into_iter()
             .map(|v| v.to_f64())
             .collect::<Vec<_>>(),
     )
-    .unwrap();
+    .map_err(|v| anyhow!("invalid array len: {}", v.len()))?;
     let im_w = img.width() as i64;
     let im_h = img.height() as i64;
     let v_vec = l1b - l1a;
@@ -40,7 +45,7 @@ pub fn get_transformed_region(q: &Quadrilateral, img: &RgbImage, text_height: u3
         .to_image(),
     ));
 
-    let img_croped = img_croped.as_opencv_mat().unwrap();
+    let img_croped = img_croped.as_opencv_mat()?;
     let src_points = q
         .pts()
         .iter()
@@ -57,7 +62,7 @@ pub fn get_transformed_region(q: &Quadrilateral, img: &RgbImage, text_height: u3
     ]
     .into_iter()
     .collect::<Vector<Point2f>>();
-    let m = find_homography(&src_points, &dst_points, &mut no_array(), RANSAC, 5.0).unwrap();
+    let m = find_homography(&src_points, &dst_points, &mut no_array(), RANSAC, 5.0)?;
     let mut region = Mat::default();
     opencv::imgproc::warp_perspective(
         &img_croped,
@@ -67,13 +72,12 @@ pub fn get_transformed_region(q: &Quadrilateral, img: &RgbImage, text_height: u3
         INTER_LINEAR,
         BORDER_CONSTANT,
         Scalar::default(),
-    )
-    .unwrap();
+    )?;
     if q.vertical() {
         let mut reg = Mat::default();
-        rotate(&region, &mut reg, ROTATE_90_COUNTERCLOCKWISE).unwrap();
+        rotate(&region, &mut reg, ROTATE_90_COUNTERCLOCKWISE)?;
         region = reg;
     }
 
-    region
+    Ok(region)
 }
