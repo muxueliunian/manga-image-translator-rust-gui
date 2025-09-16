@@ -143,7 +143,49 @@ pub struct TextBlock {
     language: Option<Language>,
     pub translations: HashMap<String, String>,
 }
+
 impl TextBlock {
+    pub fn export(self) -> Vec<u8> {
+        let mut buffer = vec![];
+        buffer.extend(self.font_size.to_le_bytes());
+        buffer.extend(self.angle.to_le_bytes());
+        buffer.extend(self.prob.to_le_bytes());
+        buffer.push(if self.skip_translate { 1 } else { 0 });
+        buffer.push(if self.fg_color.is_some() { 1 } else { 0 });
+        if let Some(fg_color) = self.fg_color {
+            buffer.push(fg_color.0);
+            buffer.push(fg_color.1);
+            buffer.push(fg_color.2);
+        }
+        buffer.push(if self.bg_color.is_some() { 1 } else { 0 });
+        if let Some(bg_color) = self.bg_color {
+            buffer.push(bg_color.0);
+            buffer.push(bg_color.1);
+            buffer.push(bg_color.2);
+        }
+        let text = self.text.as_bytes();
+        buffer.extend((text.len() as u64).to_le_bytes());
+        buffer.extend(text);
+        buffer.extend((self.lines.len() as u64).to_le_bytes());
+        for line in self.lines {
+            buffer.extend(
+                line.iter()
+                    .flat_map(|v| vec![v.x.to_le_bytes(), v.y.to_le_bytes()])
+                    .flatten(),
+            );
+        }
+        buffer.extend((self.translations.len() as u64).to_le_bytes());
+        for (key, value) in self.translations {
+            let key = key.as_bytes();
+            let value = value.as_bytes();
+            buffer.extend((key.len() as u64).to_le_bytes());
+            buffer.extend(key);
+            buffer.extend((value.len() as u64).to_le_bytes());
+            buffer.extend(value);
+        }
+        buffer
+    }
+
     pub fn obb(&self) -> Option<OBB> {
         let coords = MultiPoint::new(vec![Point::new(0.0, 0.0)])
             .convex_hull()
