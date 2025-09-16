@@ -11,6 +11,40 @@ pub struct Export {
     pub patches: Vec<Patch>,
 }
 
+impl Image {
+    pub fn export(self) -> Vec<u8> {
+        let mut bytes = vec![];
+        bytes.extend(self.width.to_le_bytes());
+        bytes.extend(self.height.to_le_bytes());
+        bytes.push(if self.raw { 1 } else { 0 });
+        bytes.extend((self.data.len() as u64).to_le_bytes());
+        bytes.extend(self.data);
+        bytes
+    }
+}
+
+impl Patch {
+    pub fn export(self) -> Vec<u8> {
+        let mut buffer = vec![];
+        buffer.extend((self.pos.0 as u64).to_le_bytes());
+        buffer.extend((self.pos.1 as u64).to_le_bytes());
+        buffer.extend(self.bg.export());
+        buffer.extend(self.info.export());
+        buffer
+    }
+}
+
+impl Export {
+    pub fn export(self) -> Vec<u8> {
+        let mut buffer = self.img.export();
+        buffer.extend((self.patches.len() as u64).to_le_bytes());
+        for patch in self.patches {
+            buffer.extend(patch.export())
+        }
+        buffer
+    }
+}
+
 fn convert<P: Pixel + PixelWithColorType, Container>(
     img: &ImageBuffer<P, Container>,
     format: ImageFormat,
