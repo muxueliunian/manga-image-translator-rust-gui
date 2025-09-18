@@ -21,11 +21,11 @@ use util::{
 
 pub struct Ocr48px {
     model: Option<((Session, Session, Session), Vec<String>)>,
-    providers: Vec<Providers>,
+    providers: Arc<Vec<Providers>>,
 }
 
 impl Ocr48px {
-    pub fn new(providers: Vec<Providers>) -> Self {
+    pub fn new(providers: Arc<Vec<Providers>>) -> Self {
         Self {
             model: None,
             providers,
@@ -258,7 +258,7 @@ mod tests {
     async fn ocr_test() {
         let img = RawImage::new("./imgs/232265329-6a560438-e887-4f7f-b6a1-a61b8648f781.png")
             .expect("Failed to load image");
-        let mut mocr = Ocr48px::new(all_providers());
+        let mut mocr = Ocr48px::new(Arc::new(all_providers()));
         let inp = vec![
             Arc::new(Mutex::new(Quadrilateral::new(
                 vec![(208, 4), (246, 4), (246, 192), (208, 192)],

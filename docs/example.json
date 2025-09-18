@@ -1,0 +1,41 @@
+{
+  "upscaler": { "upscaler": null, "patch_size": null, "padding": 0 },
+  "detector": {
+    "detector": "DBNet",
+    "preprocessor": {
+      "invert": false,
+      "gamma_correct": false,
+      "rotate": false,
+      "auto_rotate": false
+    },
+    "options": {
+      "detect_size": 2048,
+      "unclip_ratio": 2.3,
+      "text_threshold": 0.5,
+      "box_threshold": 0.7
+    }
+  },
+  "ocr": {
+    "ocr": "MangaOcr",
+    "min_text_length": 0,
+    "filter_text": [],
+    "prob": null,
+    "use_mocr_merge": false
+  },
+  "inpainter": {
+    "inpainter": "LamaAot",
+    "inpainting_size": 2048,
+    "ignore_bubble": null,
+    "mask_dilation_offset": 20,
+    "kernel_size": 3,
+    "furi": false,
+    "inpaint_color": [255, 255, 255]
+  },
+  "translator": {
+    "translator": "Sugoi",
+    "target": { "translator": "Sugoi", "target": "en" },
+    "filter_lang": [],
+    "pre_dict": null
+  },
+  "render": {}
+}

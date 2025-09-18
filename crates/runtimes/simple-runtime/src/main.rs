@@ -1,9 +1,12 @@
-use std::{fs::create_dir_all, path::PathBuf};
+use std::{
+    fs::{create_dir_all, File},
+    io::Write,
+    path::PathBuf,
+};
 
 use clap::Parser as _;
 use config::Config;
 use log::{error, warn};
-use png::{MyAlign, PngRenderConfig};
 use walkdir::WalkDir;
 
 use crate::{settings::Settings, setup::Models, update::check_crate_version};
@@ -21,7 +24,9 @@ mod update;
 async fn main() {
     let ui = std::env::args().count() == 1;
     if ui {
-        env_logger::init(); // Log to stderr (if you run with `RUST_LOG=debug`).
+        env_logger::Builder::new()
+            .filter(None, log::LevelFilter::Info)
+            .init();
 
         let native_options = eframe::NativeOptions {
             viewport: egui::ViewportBuilder::default()
@@ -52,6 +57,7 @@ async fn main() {
         .filter_map(|v| v.ok())
         .map(|v| v.path().to_path_buf())
         .filter(|v| v.is_file())
+        .filter(|v| !v.to_string_lossy().starts_with("."))
         .map(|v| {
             v.strip_prefix(&cli.input)
                 .map(|v| v.to_path_buf())
@@ -83,9 +89,9 @@ async fn main() {
             })
             .collect::<Vec<_>>();
     }
-    let mut renderer = png::PngRenderer::default();
     let mut models = Models::new(2, true, false).await;
     for path in input {
+        let mut output = cli.output.join(&path);
         let path = cli.input.join(path);
         if !path.exists() || !path.is_file() {
             warn!("File {} cant be found", path.display());
@@ -107,6 +113,12 @@ async fn main() {
             None
         };
         let exp = models.execute(img, &settings, debug_path).await.unwrap();
+        let bin = exp.export();
+        output.set_extension("mit.bin");
+        if let Some(parent) = output.parent() {
+            create_dir_all(parent).expect("Failed to create parent directory");
+        }
+        File::create(output).unwrap().write_all(&bin).unwrap();
         //TODO: from config
         // renderer.render(
         //     exp,
