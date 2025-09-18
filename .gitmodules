@@ -1,3 +1,6 @@
 [submodule "crates/densecrf/cpp/pydensecrf"]
 	path = crates/densecrf/cpp/pydensecrf
 	url = https://github.com/lucasb-eyer/pydensecrf
+[submodule "python/source"]
+	path = python/source
+	url = https://github.com/zyddnys/manga-image-translator
