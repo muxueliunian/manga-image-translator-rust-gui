@@ -1,13 +1,17 @@
+#!/usr/bin/env python3
+
 import struct
-import numpy as np
-import PIL
 from enum import Enum
 
 try:
     import mit_renderer
+    import PIL
+    import numpy as np
+
 except ImportError:
+    print("(Optional) Use venv: `python3 -m venv venv && source venv/bin/activate`")
     print(
-        "install module with `pip install git+https://github.com/frederik-uni/manga-image-translator.git@renderer-module#subdirectory=pip-modules/mit-renderer`"
+        "install modules with: `pip install numpy Pillow git+https://github.com/frederik-uni/manga-image-translator.git@renderer-module#subdirectory=pip-modules/mit-renderer`"
     )
     exit(1)
 

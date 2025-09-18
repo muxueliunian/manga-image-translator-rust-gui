@@ -10,3 +10,4 @@ hashes
 models/
 dist
 *.mit.bin
+!python-render.py
