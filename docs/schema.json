@@ -1,0 +1,2601 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Settings",
+  "description": "Settings for the simple runtime",
+  "type": "object",
+  "properties": {
+    "detector": {
+      "description": "Settings for the detector module",
+      "$ref": "#/$defs/DetectorSettings",
+      "default": {
+        "detector": "DBNet",
+        "options": {
+          "box_threshold": 0.7,
+          "detect_size": 2048,
+          "text_threshold": 0.5,
+          "unclip_ratio": 2.3
+        },
+        "preprocessor": {
+          "auto_rotate": false,
+          "gamma_correct": false,
+          "invert": false,
+          "rotate": false
+        }
+      }
+    },
+    "inpainter": {
+      "description": "Settings for the inpainter module",
+      "$ref": "#/$defs/InpainterSettings",
+      "default": {
+        "furi": false,
+        "ignore_bubble": null,
+        "inpaint_color": [
+          255,
+          255,
+          255
+        ],
+        "inpainter": "LamaAot",
+        "inpainting_size": 2048,
+        "kernel_size": 3,
+        "mask_dilation_offset": 20
+      }
+    },
+    "ocr": {
+      "description": "Settings for the OCR module",
+      "$ref": "#/$defs/OCRSettings",
+      "default": {
+        "filter_text": [],
+        "min_text_length": 0,
+        "ocr": "MangaOcr",
+        "prob": null,
+        "use_mocr_merge": false
+      }
+    },
+    "render": {
+      "description": "Settings for the render module",
+      "$ref": "#/$defs/RenderSettings",
+      "default": {}
+    },
+    "translator": {
+      "description": "Settings for the translator module",
+      "$ref": "#/$defs/TranslatorSettings",
+      "default": {
+        "filter_lang": [],
+        "pre_dict": null,
+        "target": {
+          "target": "en",
+          "translator": "Sugoi"
+        },
+        "translator": "Sugoi"
+      }
+    },
+    "upscaler": {
+      "description": "Settings for the upscaler module",
+      "$ref": "#/$defs/UpscalerSettings",
+      "default": {
+        "padding": 0,
+        "patch_size": null,
+        "upscaler": null
+      }
+    }
+  },
+  "$defs": {
+    "DefaultOptions": {
+      "type": "object",
+      "properties": {
+        "box_threshold": {
+          "description": "Threshold for bbox generation\nto small = more false positives/ noise, background artifacts, or partial text.\nto big = false negatives/ actual text that had slightly lower confidence is discarded.\nallowed range is from 0.0 to 1.0",
+          "type": "number",
+          "format": "double",
+          "default": 0.7
+        },
+        "detect_size": {
+          "description": "Text detector used for creating a text mask from an image\nTODO: guide",
+          "type": "integer",
+          "format": "uint64",
+          "default": 2048,
+          "minimum": 0
+        },
+        "text_threshold": {
+          "description": "Threshold for text detection\nsmaller values = more detections + more false positives\nlarger values = fewer detections + more false negatives\nallowed range is from 0.0 to 1.0",
+          "type": "number",
+          "format": "double",
+          "default": 0.5
+        },
+        "unclip_ratio": {
+          "description": "How much to extend text skeleton to form bounding box\nsmaller values = smaller text skeleton.\nto small = more false negatives/partial detections\nlarger values = bigger text skeleton detections .\nto big =  more false positives/Multiple close text lines/words may be merged\nSuggested values:\n- `1.0 – 1.5`: Use for tight text layouts, well-separated characters or lines, high-resolution images.\n- `1.5 – 2.0`: General-purpose setting. Provides a good balance between recall and precision.\n- `2.0 – 2.5`: Use when text is thin, faint, or sparse—e.g., scanned documents or light fonts.\n- `> 2.5`: Rarely needed. May cause nearby text instances to merge or overlap.",
+          "type": "number",
+          "format": "double",
+          "default": 2.3
+        }
+      }
+    },
+    "Detector": {
+      "type": "string",
+      "enum": [
+        "DBNet",
+        "Paddle",
+        "Ctd"
+      ]
+    },
+    "DetectorSettings": {
+      "type": "object",
+      "properties": {
+        "detector": {
+          "description": "Text detector used for creating a text mask from an image, DO NOT use craft for manga, it\\'s not designed for it",
+          "$ref": "#/$defs/Detector",
+          "default": "DBNet"
+        },
+        "options": {
+          "description": "Detector specific options",
+          "$ref": "#/$defs/DefaultOptions",
+          "default": {
+            "box_threshold": 0.7,
+            "detect_size": 2048,
+            "text_threshold": 0.5,
+            "unclip_ratio": 2.3
+          }
+        },
+        "preprocessor": {
+          "description": "General Options to apply before detection",
+          "$ref": "#/$defs/PreprocessorOptions",
+          "default": {
+            "auto_rotate": false,
+            "gamma_correct": false,
+            "invert": false,
+            "rotate": false
+          }
+        }
+      }
+    },
+    "Inpainter": {
+      "type": "string",
+      "enum": [
+        "LamaAot",
+        "LamaLarge",
+        "LamaMpe"
+      ]
+    },
+    "InpainterSettings": {
+      "type": "object",
+      "properties": {
+        "furi": {
+          "type": "boolean",
+          "default": false
+        },
+        "ignore_bubble": {
+          "description": "The threshold for ignoring text in non bubble areas, with valid values ranging from 1 to 50, does not ignore others. Recommendation 5 to 10. If it is too low, normal bubble areas may be ignored, and if it is too large, non bubble areas may be considered normal bubbles",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint8",
+          "default": null,
+          "maximum": 255,
+          "minimum": 0
+        },
+        "inpaint_color": {
+          "description": "If no ai is used for inpainting than use this color",
+          "type": "array",
+          "default": [
+            255,
+            255,
+            255
+          ],
+          "items": {
+            "type": "integer",
+            "format": "uint8",
+            "maximum": 255,
+            "minimum": 0
+          },
+          "maxItems": 3,
+          "minItems": 3
+        },
+        "inpainter": {
+          "description": "Inpainting model to use",
+          "$ref": "#/$defs/Inpainter",
+          "default": "LamaAot"
+        },
+        "inpainting_size": {
+          "description": "Size of image used for inpainting (too large will result in OOM)",
+          "type": "integer",
+          "format": "uint16",
+          "default": 2048,
+          "maximum": 65535,
+          "minimum": 0
+        },
+        "kernel_size": {
+          "description": "Set the convolution kernel size of the text erasure area to completely clean up text residues\"",
+          "type": "integer",
+          "format": "uint8",
+          "default": 3,
+          "maximum": 255,
+          "minimum": 0
+        },
+        "mask_dilation_offset": {
+          "description": "By how much to extend the text mask to remove left-over text pixels of the original image.",
+          "type": "integer",
+          "format": "uint32",
+          "default": 20,
+          "minimum": 0
+        }
+      }
+    },
+    "LanguageWrapper": {
+      "type": "string",
+      "enum": [
+        {
+          "description": "Chinese Traditional",
+          "type": "string",
+          "const": "cht"
+        },
+        {
+          "description": "Chinese Simplified",
+          "type": "string",
+          "const": "chs"
+        },
+        {
+          "description": "Abkhazian",
+          "type": "string",
+          "const": "ab"
+        },
+        {
+          "description": "Achinese",
+          "type": "string",
+          "const": "ace"
+        },
+        {
+          "description": "Afrikaans",
+          "type": "string",
+          "const": "af"
+        },
+        {
+          "description": "Afrikaans",
+          "type": "string",
+          "const": "afr_Latn"
+        },
+        {
+          "description": "Akan",
+          "type": "string",
+          "const": "ak"
+        },
+        {
+          "description": "Akan",
+          "type": "string",
+          "const": "aka"
+        },
+        {
+          "description": "Albanian",
+          "type": "string",
+          "const": "sq"
+        },
+        {
+          "description": "Algerian Arabic",
+          "type": "string",
+          "const": "arq"
+        },
+        {
+          "description": "Alur",
+          "type": "string",
+          "const": "alz"
+        },
+        {
+          "description": "Amharic",
+          "type": "string",
+          "const": "am"
+        },
+        {
+          "description": "Amharic",
+          "type": "string",
+          "const": "amh_Ethi"
+        },
+        {
+          "description": "Antigua and Barbuda Creole English",
+          "type": "string",
+          "const": "aig"
+        },
+        {
+          "description": "Arabic",
+          "type": "string",
+          "const": "ar"
+        },
+        {
+          "description": "Aragonese",
+          "type": "string",
+          "const": "an"
+        },
+        {
+          "description": "Aragonese",
+          "type": "string",
+          "const": "arg"
+        },
+        {
+          "description": "Armenian",
+          "type": "string",
+          "const": "hy"
+        },
+        {
+          "description": "Armenian",
+          "type": "string",
+          "const": "hye_Armn"
+        },
+        {
+          "description": "Assamese",
+          "type": "string",
+          "const": "as"
+        },
+        {
+          "description": "Assamese",
+          "type": "string",
+          "const": "asm"
+        },
+        {
+          "description": "Asturian",
+          "type": "string",
+          "const": "ast_Latn"
+        },
+        {
+          "description": "Awadhi",
+          "type": "string",
+          "const": "awa"
+        },
+        {
+          "description": "Ayacucho Quechua",
+          "type": "string",
+          "const": "quy"
+        },
+        {
+          "description": "Aymara",
+          "type": "string",
+          "const": "ay"
+        },
+        {
+          "description": "Azerbaijani",
+          "type": "string",
+          "const": "az"
+        },
+        {
+          "description": "Bahamas Creole English",
+          "type": "string",
+          "const": "bah"
+        },
+        {
+          "description": "Bajan",
+          "type": "string",
+          "const": "bjs"
+        },
+        {
+          "description": "Balinese",
+          "type": "string",
+          "const": "ban"
+        },
+        {
+          "description": "Bambara",
+          "type": "string",
+          "const": "bm"
+        },
+        {
+          "description": "Bambara",
+          "type": "string",
+          "const": "bam"
+        },
+        {
+          "description": "Banjar",
+          "type": "string",
+          "const": "bjn"
+        },
+        {
+          "description": "Barí",
+          "type": "string",
+          "const": "mot"
+        },
+        {
+          "description": "Bashkir",
+          "type": "string",
+          "const": "ba"
+        },
+        {
+          "description": "Bashkir",
+          "type": "string",
+          "const": "bak_Cyrl"
+        },
+        {
+          "description": "Basque",
+          "type": "string",
+          "const": "eu"
+        },
+        {
+          "description": "Basque",
+          "type": "string",
+          "const": "eus"
+        },
+        {
+          "description": "Batak Karo",
+          "type": "string",
+          "const": "btx"
+        },
+        {
+          "description": "Batak Simalungun",
+          "type": "string",
+          "const": "bts"
+        },
+        {
+          "description": "Batak Toba",
+          "type": "string",
+          "const": "bbc"
+        },
+        {
+          "description": "Belarusian",
+          "type": "string",
+          "const": "be"
+        },
+        {
+          "description": "Belarusian",
+          "type": "string",
+          "const": "bel_Cyrl"
+        },
+        {
+          "description": "Bemba",
+          "type": "string",
+          "const": "bem"
+        },
+        {
+          "description": "Bengali",
+          "type": "string",
+          "const": "bn"
+        },
+        {
+          "description": "Bengali",
+          "type": "string",
+          "const": "ben_Beng"
+        },
+        {
+          "description": "Betawi",
+          "type": "string",
+          "const": "bew"
+        },
+        {
+          "description": "Bhojpuri",
+          "type": "string",
+          "const": "bho"
+        },
+        {
+          "description": "Bislama",
+          "type": "string",
+          "const": "bi"
+        },
+        {
+          "description": "Bolia",
+          "type": "string",
+          "const": "bli"
+        },
+        {
+          "description": "Bosnian",
+          "type": "string",
+          "const": "bs"
+        },
+        {
+          "description": "Bosnian",
+          "type": "string",
+          "const": "bos_Latn"
+        },
+        {
+          "description": "Breton",
+          "type": "string",
+          "const": "br"
+        },
+        {
+          "description": "Buginese",
+          "type": "string",
+          "const": "bug"
+        },
+        {
+          "description": "Bulgarian",
+          "type": "string",
+          "const": "bg"
+        },
+        {
+          "description": "Bulgarian",
+          "type": "string",
+          "const": "bul_Cyrl"
+        },
+        {
+          "description": "Burmese",
+          "type": "string",
+          "const": "my"
+        },
+        {
+          "description": "Burmese",
+          "type": "string",
+          "const": "mya_Mymr"
+        },
+        {
+          "description": "Catalan",
+          "type": "string",
+          "const": "ca"
+        },
+        {
+          "description": "Catalan",
+          "type": "string",
+          "const": "cat_Latn"
+        },
+        {
+          "description": "Cebuano",
+          "type": "string",
+          "const": "ceb_Latn"
+        },
+        {
+          "description": "Central Atlas Tamazight",
+          "type": "string",
+          "const": "tzm"
+        },
+        {
+          "description": "Central Aymara",
+          "type": "string",
+          "const": "ayr"
+        },
+        {
+          "description": "Central Kanuri",
+          "type": "string",
+          "const": "knc"
+        },
+        {
+          "description": "Central Khmer",
+          "type": "string",
+          "const": "km"
+        },
+        {
+          "description": "Central Khmer",
+          "type": "string",
+          "const": "khm_Khmr"
+        },
+        {
+          "description": "Central Kurdish",
+          "type": "string",
+          "const": "ckb"
+        },
+        {
+          "description": "Chamorro",
+          "type": "string",
+          "const": "ch"
+        },
+        {
+          "description": "Chhattisgarhi",
+          "type": "string",
+          "const": "hne"
+        },
+        {
+          "description": "Chichewa; Chewa; Nyanja",
+          "type": "string",
+          "const": "ny"
+        },
+        {
+          "description": "Chichewa; Chewa; Nyanja",
+          "type": "string",
+          "const": "nya"
+        },
+        {
+          "description": "Chiga",
+          "type": "string",
+          "const": "cgg"
+        },
+        {
+          "description": "Chinese",
+          "type": "string",
+          "const": "zh"
+        },
+        {
+          "description": "Chinese",
+          "type": "string",
+          "const": "zho_Hant"
+        },
+        {
+          "description": "Chokwe",
+          "type": "string",
+          "const": "cjk"
+        },
+        {
+          "description": "Cholón",
+          "type": "string",
+          "const": "cht"
+        },
+        {
+          "description": "Chuvash",
+          "type": "string",
+          "const": "cv"
+        },
+        {
+          "description": "Cornish",
+          "type": "string",
+          "const": "kw"
+        },
+        {
+          "description": "Corsican",
+          "type": "string",
+          "const": "co"
+        },
+        {
+          "description": "Cree",
+          "type": "string",
+          "const": "cr"
+        },
+        {
+          "description": "Crimean Crimean Tatar; Crimean Crimean Turkish",
+          "type": "string",
+          "const": "crh"
+        },
+        {
+          "description": "Croatian",
+          "type": "string",
+          "const": "hr"
+        },
+        {
+          "description": "Croatian",
+          "type": "string",
+          "const": "hrv_Latn"
+        },
+        {
+          "description": "Czech",
+          "type": "string",
+          "const": "cs"
+        },
+        {
+          "description": "Czech",
+          "type": "string",
+          "const": "ces_Latn"
+        },
+        {
+          "description": "Danish",
+          "type": "string",
+          "const": "da"
+        },
+        {
+          "description": "Danish",
+          "type": "string",
+          "const": "dan_Latn"
+        },
+        {
+          "description": "Dari",
+          "type": "string",
+          "const": "prs"
+        },
+        {
+          "description": "Degexit'an",
+          "type": "string",
+          "const": "ing"
+        },
+        {
+          "description": "Divehi; Dhivehi; Maldivian",
+          "type": "string",
+          "const": "dv"
+        },
+        {
+          "description": "Dombe",
+          "type": "string",
+          "const": "dov"
+        },
+        {
+          "description": "Dutch",
+          "type": "string",
+          "const": "nl"
+        },
+        {
+          "description": "Dutch",
+          "type": "string",
+          "const": "nld_Latn"
+        },
+        {
+          "description": "Dyula",
+          "type": "string",
+          "const": "dyu"
+        },
+        {
+          "description": "Dzongkha",
+          "type": "string",
+          "const": "dz"
+        },
+        {
+          "description": "Dzongkha",
+          "type": "string",
+          "const": "dzo"
+        },
+        {
+          "description": "Eastern Ngad'a",
+          "type": "string",
+          "const": "nea"
+        },
+        {
+          "description": "Eastern Yiddish",
+          "type": "string",
+          "const": "ydd"
+        },
+        {
+          "description": "Egyptian Arabic",
+          "type": "string",
+          "const": "arz"
+        },
+        {
+          "description": "Enggano",
+          "type": "string",
+          "const": "eno"
+        },
+        {
+          "description": "English",
+          "type": "string",
+          "const": "en"
+        },
+        {
+          "description": "English",
+          "type": "string",
+          "const": "eng_Latn"
+        },
+        {
+          "description": "Esperanto",
+          "type": "string",
+          "const": "eo"
+        },
+        {
+          "description": "Esperanto",
+          "type": "string",
+          "const": "epo"
+        },
+        {
+          "description": "Estonian",
+          "type": "string",
+          "const": "et"
+        },
+        {
+          "description": "Estonian",
+          "type": "string",
+          "const": "est_Latn"
+        },
+        {
+          "description": "Ewe",
+          "type": "string",
+          "const": "ee"
+        },
+        {
+          "description": "Ewe",
+          "type": "string",
+          "const": "ewe"
+        },
+        {
+          "description": "Fanagalo",
+          "type": "string",
+          "const": "fng"
+        },
+        {
+          "description": "Faroese",
+          "type": "string",
+          "const": "fo"
+        },
+        {
+          "description": "Faroese",
+          "type": "string",
+          "const": "fao"
+        },
+        {
+          "description": "Fijian",
+          "type": "string",
+          "const": "fj"
+        },
+        {
+          "description": "Fijian",
+          "type": "string",
+          "const": "fij"
+        },
+        {
+          "description": "Finnish",
+          "type": "string",
+          "const": "fi"
+        },
+        {
+          "description": "Finnish",
+          "type": "string",
+          "const": "fin_Latn"
+        },
+        {
+          "description": "Fon",
+          "type": "string",
+          "const": "fon"
+        },
+        {
+          "description": "French",
+          "type": "string",
+          "const": "fr"
+        },
+        {
+          "description": "French",
+          "type": "string",
+          "const": "fra_Latn"
+        },
+        {
+          "description": "Friulian",
+          "type": "string",
+          "const": "fur"
+        },
+        {
+          "description": "Fulah",
+          "type": "string",
+          "const": "ff"
+        },
+        {
+          "description": "Gaelic",
+          "type": "string",
+          "const": "gd"
+        },
+        {
+          "description": "Gaelic",
+          "type": "string",
+          "const": "gla_Latn"
+        },
+        {
+          "description": "Galician",
+          "type": "string",
+          "const": "gl"
+        },
+        {
+          "description": "Galician",
+          "type": "string",
+          "const": "glg_Latn"
+        },
+        {
+          "description": "Ganda",
+          "type": "string",
+          "const": "lg"
+        },
+        {
+          "description": "Ganda",
+          "type": "string",
+          "const": "lug_Latn"
+        },
+        {
+          "description": "Georgian",
+          "type": "string",
+          "const": "ka"
+        },
+        {
+          "description": "Georgian",
+          "type": "string",
+          "const": "kat_Geor"
+        },
+        {
+          "description": "German",
+          "type": "string",
+          "const": "de"
+        },
+        {
+          "description": "German",
+          "type": "string",
+          "const": "deu_Latn"
+        },
+        {
+          "description": "Goan Konkani",
+          "type": "string",
+          "const": "gom"
+        },
+        {
+          "description": "Greek",
+          "type": "string",
+          "const": "el"
+        },
+        {
+          "description": "Greek",
+          "type": "string",
+          "const": "ell_Grek"
+        },
+        {
+          "description": "Grenadian Creole English",
+          "type": "string",
+          "const": "gcl"
+        },
+        {
+          "description": "Guarani",
+          "type": "string",
+          "const": "gn"
+        },
+        {
+          "description": "Guarani",
+          "type": "string",
+          "const": "grn"
+        },
+        {
+          "description": "Gujarati",
+          "type": "string",
+          "const": "gu"
+        },
+        {
+          "description": "Gujarati",
+          "type": "string",
+          "const": "guj_Gujr"
+        },
+        {
+          "description": "Guyanese Creole English",
+          "type": "string",
+          "const": "gyn"
+        },
+        {
+          "description": "Haitian",
+          "type": "string",
+          "const": "ht"
+        },
+        {
+          "description": "Haitian",
+          "type": "string",
+          "const": "hat_Latn"
+        },
+        {
+          "description": "Hakha Chin",
+          "type": "string",
+          "const": "cnh"
+        },
+        {
+          "description": "Hakka Chinese",
+          "type": "string",
+          "const": "hak"
+        },
+        {
+          "description": "Halh Mongolian",
+          "type": "string",
+          "const": "khk"
+        },
+        {
+          "description": "Hausa",
+          "type": "string",
+          "const": "ha"
+        },
+        {
+          "description": "Hausa",
+          "type": "string",
+          "const": "hau_Latn"
+        },
+        {
+          "description": "Hebrew",
+          "type": "string",
+          "const": "he"
+        },
+        {
+          "description": "Hebrew",
+          "type": "string",
+          "const": "heb_Hebr"
+        },
+        {
+          "description": "Hindi",
+          "type": "string",
+          "const": "hi"
+        },
+        {
+          "description": "Hindi",
+          "type": "string",
+          "const": "hin_Deva"
+        },
+        {
+          "description": "Huautla Mazatec",
+          "type": "string",
+          "const": "mau"
+        },
+        {
+          "description": "Hungarian",
+          "type": "string",
+          "const": "hu"
+        },
+        {
+          "description": "Hungarian",
+          "type": "string",
+          "const": "hun_Latn"
+        },
+        {
+          "description": "Hunsrik",
+          "type": "string",
+          "const": "hrx"
+        },
+        {
+          "description": "Icelandic",
+          "type": "string",
+          "const": "is"
+        },
+        {
+          "description": "Icelandic",
+          "type": "string",
+          "const": "isl_Latn"
+        },
+        {
+          "description": "Ido",
+          "type": "string",
+          "const": "io"
+        },
+        {
+          "description": "Igbo",
+          "type": "string",
+          "const": "ig"
+        },
+        {
+          "description": "Igbo",
+          "type": "string",
+          "const": "ibo_Latn"
+        },
+        {
+          "description": "Iloko",
+          "type": "string",
+          "const": "ilo_Latn"
+        },
+        {
+          "description": "Indonesian",
+          "type": "string",
+          "const": "id"
+        },
+        {
+          "description": "Indonesian",
+          "type": "string",
+          "const": "ind_Latn"
+        },
+        {
+          "description": "Interlingua (International Auxiliary Language Association)",
+          "type": "string",
+          "const": "ia"
+        },
+        {
+          "description": "Inuktitut",
+          "type": "string",
+          "const": "iu"
+        },
+        {
+          "description": "Iranian Persian",
+          "type": "string",
+          "const": "pes"
+        },
+        {
+          "description": "Irish",
+          "type": "string",
+          "const": "ga"
+        },
+        {
+          "description": "Irish",
+          "type": "string",
+          "const": "gle_Latn"
+        },
+        {
+          "description": "Italian",
+          "type": "string",
+          "const": "it"
+        },
+        {
+          "description": "Italian",
+          "type": "string",
+          "const": "ita_Latn"
+        },
+        {
+          "description": "Jamaican Creole English",
+          "type": "string",
+          "const": "jam"
+        },
+        {
+          "description": "Japanese",
+          "type": "string",
+          "const": "ja"
+        },
+        {
+          "description": "Japanese",
+          "type": "string",
+          "const": "jpn_Jpan"
+        },
+        {
+          "description": "Javanese",
+          "type": "string",
+          "const": "jv"
+        },
+        {
+          "description": "Javanese",
+          "type": "string",
+          "const": "jav_Latn"
+        },
+        {
+          "description": "Kabiyè",
+          "type": "string",
+          "const": "kbp"
+        },
+        {
+          "description": "Kabuverdianu",
+          "type": "string",
+          "const": "kea"
+        },
+        {
+          "description": "Kabyle",
+          "type": "string",
+          "const": "kab"
+        },
+        {
+          "description": "Kachin; Jingpho",
+          "type": "string",
+          "const": "kac"
+        },
+        {
+          "description": "Kalaallisut; Greenlandic",
+          "type": "string",
+          "const": "kl"
+        },
+        {
+          "description": "Kalumpang",
+          "type": "string",
+          "const": "kli"
+        },
+        {
+          "description": "Kamba",
+          "type": "string",
+          "const": "kam"
+        },
+        {
+          "description": "Kannada",
+          "type": "string",
+          "const": "kn"
+        },
+        {
+          "description": "Kannada",
+          "type": "string",
+          "const": "kan_Knda"
+        },
+        {
+          "description": "Kanuri",
+          "type": "string",
+          "const": "kr"
+        },
+        {
+          "description": "Kara (Central African Republic)",
+          "type": "string",
+          "const": "kah"
+        },
+        {
+          "description": "Kashmiri",
+          "type": "string",
+          "const": "kas"
+        },
+        {
+          "description": "Kazakh",
+          "type": "string",
+          "const": "kk"
+        },
+        {
+          "description": "Kazakh",
+          "type": "string",
+          "const": "kaz_Cyrl"
+        },
+        {
+          "description": "Kikuyu; Gikuyu",
+          "type": "string",
+          "const": "kik"
+        },
+        {
+          "description": "Kimbundu",
+          "type": "string",
+          "const": "kmb"
+        },
+        {
+          "description": "Kinyarwanda",
+          "type": "string",
+          "const": "rw"
+        },
+        {
+          "description": "Kinyarwanda",
+          "type": "string",
+          "const": "kin"
+        },
+        {
+          "description": "Kirghiz; Kyrgyz",
+          "type": "string",
+          "const": "ky"
+        },
+        {
+          "description": "Kirghiz; Kyrgyz",
+          "type": "string",
+          "const": "kir"
+        },
+        {
+          "description": "Kituba (Democratic Republic of Congo)",
+          "type": "string",
+          "const": "ktu"
+        },
+        {
+          "description": "Kongo",
+          "type": "string",
+          "const": "kon"
+        },
+        {
+          "description": "Korean",
+          "type": "string",
+          "const": "ko"
+        },
+        {
+          "description": "Korean",
+          "type": "string",
+          "const": "kor_Hang"
+        },
+        {
+          "description": "Krio",
+          "type": "string",
+          "const": "kri"
+        },
+        {
+          "description": "Kurdish",
+          "type": "string",
+          "const": "ku"
+        },
+        {
+          "description": "Kurdish",
+          "type": "string",
+          "const": "kur"
+        },
+        {
+          "description": "Langi",
+          "type": "string",
+          "const": "lag"
+        },
+        {
+          "description": "Lao",
+          "type": "string",
+          "const": "lo"
+        },
+        {
+          "description": "Lao",
+          "type": "string",
+          "const": "lao_Laoo"
+        },
+        {
+          "description": "Latgalian",
+          "type": "string",
+          "const": "ltg"
+        },
+        {
+          "description": "Latin",
+          "type": "string",
+          "const": "la"
+        },
+        {
+          "description": "Latin",
+          "type": "string",
+          "const": "lat"
+        },
+        {
+          "description": "Latvian",
+          "type": "string",
+          "const": "lv"
+        },
+        {
+          "description": "Ligurian",
+          "type": "string",
+          "const": "lij"
+        },
+        {
+          "description": "Limburgan; Limburger; Limburgish",
+          "type": "string",
+          "const": "li"
+        },
+        {
+          "description": "Limburgan; Limburger; Limburgish",
+          "type": "string",
+          "const": "lim"
+        },
+        {
+          "description": "Lingala",
+          "type": "string",
+          "const": "ln"
+        },
+        {
+          "description": "Lingala",
+          "type": "string",
+          "const": "lin_Latn"
+        },
+        {
+          "description": "Lithuanian",
+          "type": "string",
+          "const": "lt"
+        },
+        {
+          "description": "Lithuanian",
+          "type": "string",
+          "const": "lit_Latn"
+        },
+        {
+          "description": "Logo",
+          "type": "string",
+          "const": "log"
+        },
+        {
+          "description": "Logudorese Sardinian",
+          "type": "string",
+          "const": "src"
+        },
+        {
+          "description": "Lombard",
+          "type": "string",
+          "const": "lmo"
+        },
+        {
+          "description": "Loniu",
+          "type": "string",
+          "const": "los"
+        },
+        {
+          "description": "Lou",
+          "type": "string",
+          "const": "loj"
+        },
+        {
+          "description": "Luba-Luba-Lulua",
+          "type": "string",
+          "const": "lua"
+        },
+        {
+          "description": "Luo language (Kenya and Tanzania)|Luo (Kenya and Tanzania)",
+          "type": "string",
+          "const": "luo"
+        },
+        {
+          "description": "Lushai",
+          "type": "string",
+          "const": "lus"
+        },
+        {
+          "description": "Luxembourgish",
+          "type": "string",
+          "const": "lb"
+        },
+        {
+          "description": "Luxembourgish",
+          "type": "string",
+          "const": "ltz_Latn"
+        },
+        {
+          "description": "Macedonian",
+          "type": "string",
+          "const": "mk"
+        },
+        {
+          "description": "Macedonian",
+          "type": "string",
+          "const": "mkd_Cyrl"
+        },
+        {
+          "description": "Magahi",
+          "type": "string",
+          "const": "mag"
+        },
+        {
+          "description": "Maithili",
+          "type": "string",
+          "const": "mai"
+        },
+        {
+          "description": "Mala Nigeria",
+          "type": "string",
+          "const": "ruy"
+        },
+        {
+          "description": "Mala Papua New Guinea",
+          "type": "string",
+          "const": "ped"
+        },
+        {
+          "description": "Malagasy",
+          "type": "string",
+          "const": "mg"
+        },
+        {
+          "description": "Malay",
+          "type": "string",
+          "const": "ms"
+        },
+        {
+          "description": "Malayalam",
+          "type": "string",
+          "const": "ml"
+        },
+        {
+          "description": "Malayalam",
+          "type": "string",
+          "const": "mal_Mlym"
+        },
+        {
+          "description": "Maltese",
+          "type": "string",
+          "const": "mt"
+        },
+        {
+          "description": "Maltese",
+          "type": "string",
+          "const": "mlt"
+        },
+        {
+          "description": "Manipuri",
+          "type": "string",
+          "const": "mni"
+        },
+        {
+          "description": "Manx",
+          "type": "string",
+          "const": "gv"
+        },
+        {
+          "description": "Maori",
+          "type": "string",
+          "const": "mi"
+        },
+        {
+          "description": "Maori",
+          "type": "string",
+          "const": "mri"
+        },
+        {
+          "description": "Marathi",
+          "type": "string",
+          "const": "mr"
+        },
+        {
+          "description": "Marathi",
+          "type": "string",
+          "const": "mar_Deva"
+        },
+        {
+          "description": "Marshallese",
+          "type": "string",
+          "const": "mh"
+        },
+        {
+          "description": "Mesopotamian Arabic",
+          "type": "string",
+          "const": "acm"
+        },
+        {
+          "description": "Minangkabau",
+          "type": "string",
+          "const": "min"
+        },
+        {
+          "description": "Mongolian",
+          "type": "string",
+          "const": "mn"
+        },
+        {
+          "description": "Morisyen",
+          "type": "string",
+          "const": "mfe"
+        },
+        {
+          "description": "Moroccan Arabic",
+          "type": "string",
+          "const": "ary"
+        },
+        {
+          "description": "Mossi",
+          "type": "string",
+          "const": "mos"
+        },
+        {
+          "description": "Najdi Arabic",
+          "type": "string",
+          "const": "ars"
+        },
+        {
+          "description": "Ndebele; South; South Ndebele",
+          "type": "string",
+          "const": "nr"
+        },
+        {
+          "description": "Nepali Individual Language",
+          "type": "string",
+          "const": "npi"
+        },
+        {
+          "description": "Nepali",
+          "type": "string",
+          "const": "ne"
+        },
+        {
+          "description": "Ngazidja Comorian",
+          "type": "string",
+          "const": "zdj"
+        },
+        {
+          "description": "Nigerian Fulfulde",
+          "type": "string",
+          "const": "fuv"
+        },
+        {
+          "description": "North Azerbaijani",
+          "type": "string",
+          "const": "azj"
+        },
+        {
+          "description": "North Levantine Arabic",
+          "type": "string",
+          "const": "apc"
+        },
+        {
+          "description": "Northern Kurdish",
+          "type": "string",
+          "const": "kmr"
+        },
+        {
+          "description": "Northern Sami",
+          "type": "string",
+          "const": "se"
+        },
+        {
+          "description": "Northern Sami",
+          "type": "string",
+          "const": "sme"
+        },
+        {
+          "description": "Northern Sotho",
+          "type": "string",
+          "const": "nso_Latn"
+        },
+        {
+          "description": "Northern Uzbek",
+          "type": "string",
+          "const": "uzn"
+        },
+        {
+          "description": "Norwegian Bokmål",
+          "type": "string",
+          "const": "nb"
+        },
+        {
+          "description": "Norwegian Bokmål",
+          "type": "string",
+          "const": "nob"
+        },
+        {
+          "description": "Norwegian Nynorsk",
+          "type": "string",
+          "const": "nn"
+        },
+        {
+          "description": "Norwegian Nynorsk",
+          "type": "string",
+          "const": "nno"
+        },
+        {
+          "description": "Norwegian",
+          "type": "string",
+          "const": "no"
+        },
+        {
+          "description": "Nuer",
+          "type": "string",
+          "const": "nus"
+        },
+        {
+          "description": "Occitan (post 1500)",
+          "type": "string",
+          "const": "oc"
+        },
+        {
+          "description": "Occitan (post 1500)",
+          "type": "string",
+          "const": "oci_Latn"
+        },
+        {
+          "description": "Odia",
+          "type": "string",
+          "const": "ory"
+        },
+        {
+          "description": "Ojibwa",
+          "type": "string",
+          "const": "oj"
+        },
+        {
+          "description": "Oriya",
+          "type": "string",
+          "const": "or"
+        },
+        {
+          "description": "Oromo",
+          "type": "string",
+          "const": "om"
+        },
+        {
+          "description": "Ossetian; Ossetic",
+          "type": "string",
+          "const": "os"
+        },
+        {
+          "description": "Pangasinan",
+          "type": "string",
+          "const": "pag"
+        },
+        {
+          "description": "Panjabi",
+          "type": "string",
+          "const": "pa"
+        },
+        {
+          "description": "Panjabi",
+          "type": "string",
+          "const": "pan_Guru"
+        },
+        {
+          "description": "Papiamento",
+          "type": "string",
+          "const": "pap"
+        },
+        {
+          "description": "Persian",
+          "type": "string",
+          "const": "fa"
+        },
+        {
+          "description": "Pijin",
+          "type": "string",
+          "const": "pis"
+        },
+        {
+          "description": "Plateau Malagasy",
+          "type": "string",
+          "const": "plt"
+        },
+        {
+          "description": "Polish",
+          "type": "string",
+          "const": "pl"
+        },
+        {
+          "description": "Polish",
+          "type": "string",
+          "const": "pol_Latn"
+        },
+        {
+          "description": "Portuguese",
+          "type": "string",
+          "const": "pt"
+        },
+        {
+          "description": "Portuguese",
+          "type": "string",
+          "const": "por_Latn"
+        },
+        {
+          "description": "Potawatomi",
+          "type": "string",
+          "const": "pot"
+        },
+        {
+          "description": "Pushto",
+          "type": "string",
+          "const": "ps"
+        },
+        {
+          "description": "Quechua",
+          "type": "string",
+          "const": "qu"
+        },
+        {
+          "description": "Quechua",
+          "type": "string",
+          "const": "que"
+        },
+        {
+          "description": "Rajput Garasia",
+          "type": "string",
+          "const": "gra"
+        },
+        {
+          "description": "Romanian",
+          "type": "string",
+          "const": "ro"
+        },
+        {
+          "description": "Romanian",
+          "type": "string",
+          "const": "ron_Latn"
+        },
+        {
+          "description": "Romansh",
+          "type": "string",
+          "const": "rm"
+        },
+        {
+          "description": "Rundi",
+          "type": "string",
+          "const": "rn"
+        },
+        {
+          "description": "Rundi",
+          "type": "string",
+          "const": "run"
+        },
+        {
+          "description": "Russian",
+          "type": "string",
+          "const": "ru"
+        },
+        {
+          "description": "Russian",
+          "type": "string",
+          "const": "rus_Cyrl"
+        },
+        {
+          "description": "Saint Lucian Creole French",
+          "type": "string",
+          "const": "acf"
+        },
+        {
+          "description": "Samoan",
+          "type": "string",
+          "const": "sm"
+        },
+        {
+          "description": "Samoan",
+          "type": "string",
+          "const": "smo"
+        },
+        {
+          "description": "Sango",
+          "type": "string",
+          "const": "sg"
+        },
+        {
+          "description": "Sango",
+          "type": "string",
+          "const": "sag"
+        },
+        {
+          "description": "Sanskrit",
+          "type": "string",
+          "const": "sa"
+        },
+        {
+          "description": "Sanskrit",
+          "type": "string",
+          "const": "san"
+        },
+        {
+          "description": "Santali",
+          "type": "string",
+          "const": "sat"
+        },
+        {
+          "description": "Sardinian",
+          "type": "string",
+          "const": "srd"
+        },
+        {
+          "description": "Sechelt",
+          "type": "string",
+          "const": "sec"
+        },
+        {
+          "description": "Serbian",
+          "type": "string",
+          "const": "sr"
+        },
+        {
+          "description": "Serbian",
+          "type": "string",
+          "const": "srp_Cyrl"
+        },
+        {
+          "description": "Seselwa Creole French",
+          "type": "string",
+          "const": "crs"
+        },
+        {
+          "description": "Shall-Zwall",
+          "type": "string",
+          "const": "sha"
+        },
+        {
+          "description": "Shan",
+          "type": "string",
+          "const": "shn"
+        },
+        {
+          "description": "Shona",
+          "type": "string",
+          "const": "sn"
+        },
+        {
+          "description": "Shona",
+          "type": "string",
+          "const": "sna"
+        },
+        {
+          "description": "Sicilian",
+          "type": "string",
+          "const": "scn"
+        },
+        {
+          "description": "Silesian",
+          "type": "string",
+          "const": "szl"
+        },
+        {
+          "description": "Sindhi",
+          "type": "string",
+          "const": "sd"
+        },
+        {
+          "description": "Sindhi",
+          "type": "string",
+          "const": "snd_Arab"
+        },
+        {
+          "description": "Sinhala",
+          "type": "string",
+          "const": "si"
+        },
+        {
+          "description": "Sinhala",
+          "type": "string",
+          "const": "sin_Sinh"
+        },
+        {
+          "description": "Slovak",
+          "type": "string",
+          "const": "sk"
+        },
+        {
+          "description": "Slovak",
+          "type": "string",
+          "const": "slk_Latn"
+        },
+        {
+          "description": "Slovenian",
+          "type": "string",
+          "const": "sl"
+        },
+        {
+          "description": "Slovenian",
+          "type": "string",
+          "const": "slv_Latn"
+        },
+        {
+          "description": "Solos",
+          "type": "string",
+          "const": "sol"
+        },
+        {
+          "description": "Somali",
+          "type": "string",
+          "const": "so"
+        },
+        {
+          "description": "Somali",
+          "type": "string",
+          "const": "som_Latn"
+        },
+        {
+          "description": "Sotho; Southern",
+          "type": "string",
+          "const": "st"
+        },
+        {
+          "description": "South Azerbaijani",
+          "type": "string",
+          "const": "azb"
+        },
+        {
+          "description": "South Levantine Arabic",
+          "type": "string",
+          "const": "ajp"
+        },
+        {
+          "description": "Southern Pashto",
+          "type": "string",
+          "const": "pbt"
+        },
+        {
+          "description": "Southern Sotho",
+          "type": "string",
+          "const": "sot"
+        },
+        {
+          "description": "Southwestern Dinka",
+          "type": "string",
+          "const": "dik"
+        },
+        {
+          "description": "Spanish",
+          "type": "string",
+          "const": "es"
+        },
+        {
+          "description": "Spanish",
+          "type": "string",
+          "const": "spa_Latn"
+        },
+        {
+          "description": "Standard Arabic",
+          "type": "string",
+          "const": "arb"
+        },
+        {
+          "description": "Standard Latvian",
+          "type": "string",
+          "const": "lvs"
+        },
+        {
+          "description": "Standard Malay",
+          "type": "string",
+          "const": "zsm"
+        },
+        {
+          "description": "Sundanese",
+          "type": "string",
+          "const": "su"
+        },
+        {
+          "description": "Sundanese",
+          "type": "string",
+          "const": "sun_Latn"
+        },
+        {
+          "description": "Swahili Individual Language",
+          "type": "string",
+          "const": "swh"
+        },
+        {
+          "description": "Swahili",
+          "type": "string",
+          "const": "sw"
+        },
+        {
+          "description": "Swati",
+          "type": "string",
+          "const": "ss"
+        },
+        {
+          "description": "Swati",
+          "type": "string",
+          "const": "ssw_Latn"
+        },
+        {
+          "description": "Swedish",
+          "type": "string",
+          "const": "sv"
+        },
+        {
+          "description": "Swedish",
+          "type": "string",
+          "const": "swe_Latn"
+        },
+        {
+          "description": "Sãotomense",
+          "type": "string",
+          "const": "cri"
+        },
+        {
+          "description": "Ta'izzi-Adeni Arabic",
+          "type": "string",
+          "const": "acq"
+        },
+        {
+          "description": "Tagalog",
+          "type": "string",
+          "const": "tl"
+        },
+        {
+          "description": "Tagalog",
+          "type": "string",
+          "const": "tgl_Latn"
+        },
+        {
+          "description": "Tajik",
+          "type": "string",
+          "const": "tg"
+        },
+        {
+          "description": "Tajik",
+          "type": "string",
+          "const": "tgk"
+        },
+        {
+          "description": "Tamasheq",
+          "type": "string",
+          "const": "taq"
+        },
+        {
+          "description": "Tamil",
+          "type": "string",
+          "const": "ta"
+        },
+        {
+          "description": "Tamil",
+          "type": "string",
+          "const": "tam_Taml"
+        },
+        {
+          "description": "Tatar",
+          "type": "string",
+          "const": "tt"
+        },
+        {
+          "description": "Tatar",
+          "type": "string",
+          "const": "tat"
+        },
+        {
+          "description": "Telugu",
+          "type": "string",
+          "const": "te"
+        },
+        {
+          "description": "Telugu",
+          "type": "string",
+          "const": "tel"
+        },
+        {
+          "description": "Thai",
+          "type": "string",
+          "const": "th"
+        },
+        {
+          "description": "Thai",
+          "type": "string",
+          "const": "tha_Thai"
+        },
+        {
+          "description": "Tibetan",
+          "type": "string",
+          "const": "bo"
+        },
+        {
+          "description": "Tibetan",
+          "type": "string",
+          "const": "bod"
+        },
+        {
+          "description": "Tigrinya",
+          "type": "string",
+          "const": "ti"
+        },
+        {
+          "description": "Tigrinya",
+          "type": "string",
+          "const": "tir"
+        },
+        {
+          "description": "Tok Tok Pisin",
+          "type": "string",
+          "const": "tpi"
+        },
+        {
+          "description": "Tonga (Tonga Islands)",
+          "type": "string",
+          "const": "to"
+        },
+        {
+          "description": "Tosk Albanian",
+          "type": "string",
+          "const": "als"
+        },
+        {
+          "description": "Tsonga",
+          "type": "string",
+          "const": "ts"
+        },
+        {
+          "description": "Tsonga",
+          "type": "string",
+          "const": "tso"
+        },
+        {
+          "description": "Tswana",
+          "type": "string",
+          "const": "tn"
+        },
+        {
+          "description": "Tswana",
+          "type": "string",
+          "const": "tsn_Latn"
+        },
+        {
+          "description": "Tumbuka",
+          "type": "string",
+          "const": "tum"
+        },
+        {
+          "description": "Tumulung Sisaala",
+          "type": "string",
+          "const": "sil"
+        },
+        {
+          "description": "Tunisian Arabic",
+          "type": "string",
+          "const": "aeb"
+        },
+        {
+          "description": "Turkish",
+          "type": "string",
+          "const": "tr"
+        },
+        {
+          "description": "Turkish",
+          "type": "string",
+          "const": "tur_Latn"
+        },
+        {
+          "description": "Turkmen",
+          "type": "string",
+          "const": "tk"
+        },
+        {
+          "description": "Turkmen",
+          "type": "string",
+          "const": "tuk"
+        },
+        {
+          "description": "Twi",
+          "type": "string",
+          "const": "twi"
+        },
+        {
+          "description": "Uighur; Uyghur",
+          "type": "string",
+          "const": "ug"
+        },
+        {
+          "description": "Uighur; Uyghur",
+          "type": "string",
+          "const": "uig"
+        },
+        {
+          "description": "Ukrainian",
+          "type": "string",
+          "const": "uk"
+        },
+        {
+          "description": "Ukrainian",
+          "type": "string",
+          "const": "ukr_Cyrl"
+        },
+        {
+          "description": "Uma",
+          "type": "string",
+          "const": "ppk"
+        },
+        {
+          "description": "Umbundu",
+          "type": "string",
+          "const": "umb"
+        },
+        {
+          "description": "Upper Guinea Crioulo",
+          "type": "string",
+          "const": "pov"
+        },
+        {
+          "description": "Upper Sorbian",
+          "type": "string",
+          "const": "hsb"
+        },
+        {
+          "description": "Urdu",
+          "type": "string",
+          "const": "ur"
+        },
+        {
+          "description": "Urdu",
+          "type": "string",
+          "const": "urd_Arab"
+        },
+        {
+          "description": "Uzbek",
+          "type": "string",
+          "const": "uz"
+        },
+        {
+          "description": "Venda",
+          "type": "string",
+          "const": "ve"
+        },
+        {
+          "description": "Venetian",
+          "type": "string",
+          "const": "vec"
+        },
+        {
+          "description": "Vietnamese",
+          "type": "string",
+          "const": "vi"
+        },
+        {
+          "description": "Vietnamese",
+          "type": "string",
+          "const": "vie_Latn"
+        },
+        {
+          "description": "Vincentian Creole English",
+          "type": "string",
+          "const": "svc"
+        },
+        {
+          "description": "Virgin Islands Creole English",
+          "type": "string",
+          "const": "vic"
+        },
+        {
+          "description": "Volapük",
+          "type": "string",
+          "const": "vo"
+        },
+        {
+          "description": "Volapük",
+          "type": "string",
+          "const": "vol"
+        },
+        {
+          "description": "Wallisian",
+          "type": "string",
+          "const": "wls"
+        },
+        {
+          "description": "Walloon",
+          "type": "string",
+          "const": "wa"
+        },
+        {
+          "description": "Walloon",
+          "type": "string",
+          "const": "wln"
+        },
+        {
+          "description": "Waray",
+          "type": "string",
+          "const": "war"
+        },
+        {
+          "description": "Welsh",
+          "type": "string",
+          "const": "cy"
+        },
+        {
+          "description": "Welsh",
+          "type": "string",
+          "const": "cym_Latn"
+        },
+        {
+          "description": "West Central Oromo",
+          "type": "string",
+          "const": "gaz"
+        },
+        {
+          "description": "Western Frisian",
+          "type": "string",
+          "const": "fy"
+        },
+        {
+          "description": "Wiarumus",
+          "type": "string",
+          "const": "tua"
+        },
+        {
+          "description": "Wolof",
+          "type": "string",
+          "const": "wo"
+        },
+        {
+          "description": "Wolof",
+          "type": "string",
+          "const": "wol_Latn"
+        },
+        {
+          "description": "Xhosa",
+          "type": "string",
+          "const": "xh"
+        },
+        {
+          "description": "Xhosa",
+          "type": "string",
+          "const": "xho_Latn"
+        },
+        {
+          "description": "Yiddish",
+          "type": "string",
+          "const": "yi"
+        },
+        {
+          "description": "Yoruba",
+          "type": "string",
+          "const": "yo"
+        },
+        {
+          "description": "Yoruba",
+          "type": "string",
+          "const": "yor_Latn"
+        },
+        {
+          "description": "Yucateco",
+          "type": "string",
+          "const": "yua"
+        },
+        {
+          "description": "Yue Chinese",
+          "type": "string",
+          "const": "yue"
+        },
+        {
+          "description": "Zari",
+          "type": "string",
+          "const": "zaz"
+        },
+        {
+          "description": "Zulu",
+          "type": "string",
+          "const": "zu"
+        },
+        {
+          "description": "Zulu",
+          "type": "string",
+          "const": "zul_Latn"
+        }
+      ]
+    },
+    "OCR": {
+      "type": "string",
+      "enum": [
+        "MangaOcr",
+        "Native",
+        "Tesseract",
+        "Ctc48px"
+      ]
+    },
+    "OCRSettings": {
+      "type": "object",
+      "properties": {
+        "filter_text": {
+          "description": "Filter regions by their text with a regex. Example usage: '.*badtext.*'\ntodo: regex",
+          "type": "array",
+          "default": [],
+          "items": {
+            "type": "string"
+          }
+        },
+        "min_text_length": {
+          "description": "Minimum text length of a text region",
+          "type": "integer",
+          "format": "uint",
+          "default": 0,
+          "minimum": 0
+        },
+        "ocr": {
+          "description": "Optical character recognition (OCR) model to use",
+          "$ref": "#/$defs/OCR",
+          "default": "MangaOcr"
+        },
+        "prob": {
+          "description": "Minimum probability of a text region to be considered valid. If None, uses the model default\ntodo: not used",
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "float",
+          "default": null
+        },
+        "use_mocr_merge": {
+          "description": "Use bbox merge when Manga OCR inference.\ntodo: not used",
+          "type": "boolean",
+          "default": false
+        }
+      }
+    },
+    "PreprocessorOptions": {
+      "type": "object",
+      "properties": {
+        "auto_rotate": {
+          "description": "Rotate the image for detection to prefer vertical textlines. Might improve detection.",
+          "type": "boolean",
+          "default": false
+        },
+        "gamma_correct": {
+          "description": "Applies gamma correction for detection. Might improve detection.",
+          "type": "boolean",
+          "default": false
+        },
+        "invert": {
+          "description": "Invert the image colors for detection. Might improve detection.",
+          "type": "boolean",
+          "default": false
+        },
+        "rotate": {
+          "description": "Rotate the image for detection. Might improve detection.",
+          "type": "boolean",
+          "default": false
+        }
+      }
+    },
+    "RenderSettings": {
+      "type": "object"
+    },
+    "SingleOrMultiple": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Translation"
+        },
+        {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Translation"
+          }
+        }
+      ]
+    },
+    "Target": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/SingleOrMultiple"
+        },
+        {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/SingleOrMultiple"
+          }
+        }
+      ]
+    },
+    "Translation": {
+      "type": "object",
+      "properties": {
+        "target": {
+          "$ref": "#/$defs/LanguageWrapper"
+        },
+        "translator": {
+          "$ref": "#/$defs/Translator"
+        }
+      },
+      "required": [
+        "translator",
+        "target"
+      ]
+    },
+    "Translator": {
+      "type": "string",
+      "enum": [
+        "JParaCrawlSmall",
+        "JParaCrawlBase",
+        "JParaCrawlLarge",
+        "Baidu",
+        "Caiyun",
+        "Deepl",
+        "Google",
+        "M2M100Small",
+        "M2M100Large",
+        "MBart",
+        "MyMemory",
+        "NLLBSmallDistilled",
+        "NLLBBase",
+        "NLLBLarge",
+        "Papago",
+        "Sugoi",
+        "Youdao"
+      ]
+    },
+    "TranslatorSettings": {
+      "type": "object",
+      "properties": {
+        "filter_lang": {
+          "description": "Filters out languages that should not be translated",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "pre_dict": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "target": {
+          "$ref": "#/$defs/Target"
+        },
+        "translator": {
+          "$ref": "#/$defs/Translator"
+        }
+      },
+      "required": [
+        "translator",
+        "target",
+        "filter_lang"
+      ]
+    },
+    "Upscaler": {
+      "oneOf": [
+        {
+          "type": "string",
+          "enum": [
+            "Esrgan2x",
+            "Esrgan4x",
+            "EsrganAnime4x",
+            "Anime4k"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "Waifu2xCuNetArt": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "format": "uint8",
+              "maximum": 255,
+              "minimum": 0
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "Waifu2xCuNetArt"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "Waifu2xSwinUnetArt2x": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "format": "uint8",
+              "maximum": 255,
+              "minimum": 0
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "Waifu2xSwinUnetArt2x"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "Waifu2xSwinUnetArt4x": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "format": "uint8",
+              "maximum": 255,
+              "minimum": 0
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "Waifu2xSwinUnetArt4x"
+          ]
+        }
+      ]
+    },
+    "UpscalerSettings": {
+      "type": "object",
+      "properties": {
+        "padding": {
+          "type": "integer",
+          "format": "uint",
+          "default": 0,
+          "minimum": 0
+        },
+        "patch_size": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint",
+          "default": null,
+          "minimum": 0
+        },
+        "upscaler": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Upscaler"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      }
+    }
+  }
+}

@@ -6,11 +6,12 @@ use std::sync::Arc;
 use base_util::RawSerializable;
 use interface_image::{ImageOp, Mask, RawImage, RawImageCow};
 use interface_model::Model;
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::textlines::Quadrilateral;
 
-#[derive(Default, Clone, Copy, Deserialize, Serialize)]
+#[derive(Default, Clone, Copy, Deserialize, Serialize, JsonSchema)]
 #[serde(default)]
 pub struct PreprocessorOptions {
     /// Invert the image colors for detection. Might improve detection.
@@ -72,7 +73,7 @@ pub trait Detector: Model {
     ) -> anyhow::Result<(Vec<Quadrilateral>, Mask)>;
 }
 
-#[derive(Clone, Copy, Deserialize, Serialize)]
+#[derive(Clone, Copy, Deserialize, Serialize, JsonSchema)]
 #[repr(C)]
 #[serde(default)]
 pub struct DefaultOptions {

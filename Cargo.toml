@@ -70,6 +70,8 @@ png = { path = "crates/modules/renderer/png" }
 tesseract = { path = "crates/modules/ocr/tesseract" }
 native = { path = "crates/modules/ocr/native" }
 ctc-48px = { path = "crates/modules/ocr/ctc-48px" }
+ocr-48px = { path = "crates/modules/ocr/ocr-48px" }
+
 densecrf = { path = "crates/densecrf" }
 show-image = "0.13"
 thiserror = "2.0"
