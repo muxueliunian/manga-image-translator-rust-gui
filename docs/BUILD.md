@@ -23,7 +23,7 @@ export OPENCV_LINK_LIBS=opencv_core,opencv_imgproc,opencv_calib3d
 choco install opencv llvm
 
 $env:OPENCV_LINK_LIBS = $libName # opencv_world*.lib. Its the only .lib file in the C:\tools\opencv if you use the prebuilts
-$env:OPENCV_LINK_PATHS = $libPath # the parent folder of the opencv_world*.lib file
+$env:OPENCV_LINK_PATHS = $libPath # the parent folder of the opencv_world*.lib file. maybe "C:\tools\opencv\build\x64\vc16\lib"
 $env:OPENCV_INCLUDE_PATHS = $includePath # most likely "C:\tools\opencv\build\include"
 ```
 
