@@ -1,9 +1,10 @@
-use anyhow::{anyhow, bail};
+use anyhow::anyhow;
 use base_util::{ndarray_utils, opencv_utils::as_slice};
 use geo::{
     Area, BooleanOps as _, Centroid, ConvexHull as _, Distance as _, Euclidean, MultiPoint, Point,
 };
 use interface_detector::textlines::Quadrilateral;
+use log::warn;
 use ndarray::{concatenate, Array1, Array2, Array3, Axis};
 use opencv::{
     boxed_ref::BoxedRefMut,
@@ -274,7 +275,8 @@ pub fn complete_mask(
     for (i, cc) in textline_ccs.iter_mut().enumerate() {
         let [x1, y1, x2, y2] = textline_rects.get_row(i).try_into()?;
         if x1 == i32::MAX || y1 == i32::MAX || x2 == i32::MIN || y2 == i32::MIN {
-            bail!("x or y coordinate not updated")
+            warn!("x or y coordinate not updated");
+            continue;
         }
         let w1 = x2 - x1;
         let h1 = y2 - y1;

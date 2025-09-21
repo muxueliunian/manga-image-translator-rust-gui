@@ -4081,6 +4081,7 @@ dependencies = [
  "geo",
  "interface-detector",
  "interface-image",
+ "log",
  "ndarray",
  "ndarray-npy",
  "opencv",
