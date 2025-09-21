@@ -16,6 +16,9 @@ runs:
       shell: bash
       run: |
         brew install llvm opencv tbb
+        TBB_ROOT=$(brew --prefix tbb)
+        echo "TBB_ROOT=$TBB_ROOT" >> $GITHUB_ENV
+        echo "PATH=$TBB_ROOT/bin:$PATH" >> $GITHUB_ENV
         if [[ "${{ inputs.runs-on }}" == "macos-13" ]]; then
           brew install openssl@3
           echo 'export OPENSSL_DIR=$(brew --prefix openssl@3)' >> $GITHUB_ENV
