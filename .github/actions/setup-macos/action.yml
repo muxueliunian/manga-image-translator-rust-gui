@@ -15,7 +15,8 @@ runs:
     - name: Install macOS dependencies
       shell: bash
       run: |
-        brew install llvm opencv tbb
+        brew install llvm opencv
+        find $(brew --prefix opencv)/lib -name "*.dylib" -type f -delete
         TBB_ROOT=$(brew --prefix tbb)
         RUSTFLAGS="-L $TBB_ROOT/lib $RUSTFLAGS"
         echo "RUSTFLAGS=$RUSTFLAGS" >> $GITHUB_ENV
