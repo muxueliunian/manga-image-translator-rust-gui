@@ -1,14 +1,13 @@
 use std::{
     collections::{HashMap, HashSet},
     f64::consts::PI,
-    sync::Arc,
 };
 
 use anyhow::anyhow;
 use geo::{ConvexHull, Distance as _, Euclidean, MinimumRotatedRect, MultiPoint, Point};
-use interface_detector::textlines::{MyPoint, Quadrilateral};
+use interface_detector::textlines::MyPoint;
 use interface_ocr::QuadrilateralInfo;
-use interface_translator::{is_valuable_text, Detector, LangIdDetector, Language, LanguageWrapper};
+use interface_translator::{is_valuable_text, Detector, Language, LanguageWrapper};
 use itertools::Itertools as _;
 use log::info;
 use once_cell::sync::Lazy;
@@ -28,56 +27,62 @@ pub fn dispatch(
     height: u16,
     det: &dyn Detector,
 ) -> anyhow::Result<Vec<TextBlock>> {
-    merge_bboxes_text_region(&textlines, width, height)?
-        .into_iter()
-        .map(|(txtlns, fg_color, bg_color)| {
-            let mut total_logprobs = 0.0;
-            for txtln in &txtlns {
-                let pos = txtln.pos.lock();
-                total_logprobs += pos.score().ln() * pos.area();
-            }
+    let len = textlines.len();
+    let items: anyhow::Result<Vec<TextBlock>> =
+        merge_bboxes_text_region(&textlines, width, height)?
+            .into_iter()
+            .map(|(txtlns, fg_color, bg_color)| {
+                let mut total_logprobs = 0.0;
+                for txtln in &txtlns {
+                    let pos = txtln.pos.lock();
+                    total_logprobs += pos.score().ln() * pos.area();
+                }
 
-            total_logprobs /= textlines.iter().map(|v| v.pos.lock().area()).sum::<f64>();
-            let font_size = txtlns
-                .iter()
-                .map(|v| v.pos.lock().font_size() as u64)
-                .min()
-                .unwrap_or_default();
-            let mut angle = mean(txtlns.iter().map(|v| v.pos.lock().angle()))
-                .ok_or(anyhow!("no inputs"))?
-                * (180.0 / std::f64::consts::PI)
-                - 90.0;
-            if angle.abs() < 3.0 {
-                angle = 0.0;
-            }
-            let lines = txtlns
-                .iter()
-                .map(|v| v.pos.lock().pts().clone())
-                .collect::<Vec<_>>();
-            let texts = txtlns
-                .into_iter()
-                .map(|v| v.text.clone())
-                .collect::<Vec<_>>();
-            let fg_color = match fg_color {
-                (Some(r), Some(g), Some(b)) => Some((r as u8, g as u8, b as u8)),
-                _ => None,
-            };
-            let bg_color = match bg_color {
-                (Some(r), Some(g), Some(b)) => Some((r as u8, g as u8, b as u8)),
-                _ => None,
-            };
-            Ok(TextBlock::new(
-                lines,
-                texts,
-                font_size,
-                angle,
-                total_logprobs.exp(),
-                fg_color,
-                bg_color,
-                det,
-            ))
-        })
-        .collect()
+                total_logprobs /= textlines.iter().map(|v| v.pos.lock().area()).sum::<f64>();
+                let font_size = txtlns
+                    .iter()
+                    .map(|v| v.pos.lock().font_size() as u64)
+                    .min()
+                    .unwrap_or_default();
+                let mut angle = mean(txtlns.iter().map(|v| v.pos.lock().angle()))
+                    .ok_or(anyhow!("no inputs"))?
+                    * (180.0 / std::f64::consts::PI)
+                    - 90.0;
+                if angle.abs() < 3.0 {
+                    angle = 0.0;
+                }
+                let lines = txtlns
+                    .iter()
+                    .map(|v| v.pos.lock().pts().clone())
+                    .collect::<Vec<_>>();
+                let texts = txtlns
+                    .into_iter()
+                    .map(|v| v.text.clone())
+                    .collect::<Vec<_>>();
+                let fg_color = match fg_color {
+                    (Some(r), Some(g), Some(b)) => Some((r as u8, g as u8, b as u8)),
+                    _ => None,
+                };
+                let bg_color = match bg_color {
+                    (Some(r), Some(g), Some(b)) => Some((r as u8, g as u8, b as u8)),
+                    _ => None,
+                };
+                Ok::<_, anyhow::Error>(TextBlock::new(
+                    lines,
+                    texts,
+                    font_size,
+                    angle,
+                    total_logprobs.exp(),
+                    fg_color,
+                    bg_color,
+                    det,
+                ))
+            })
+            .collect();
+    let items: Vec<TextBlock> = items?;
+    let new_len = items.iter().map(|v| v.lines.len()).sum::<usize>();
+    assert_eq!(len, new_len, "Some areas were removed");
+    Ok(items)
 }
 
 fn deg2rad(deg: f32) -> f32 {
@@ -448,6 +453,7 @@ where
     }
     Some(sum / count as f64)
 }
+
 fn stddev(values: &[f64]) -> Option<f64> {
     let len = values.len();
     if len == 0 {
@@ -565,16 +571,35 @@ fn split_text_region(
     } else {
         let mut graph: Graph<usize, (), petgraph::Undirected> = Graph::new_undirected();
         let mut map = HashMap::new();
-        for idx in connected_region_indices {
+
+        for idx in connected_region_indices.clone() {
             map.insert(idx.index(), graph.add_node(idx.index()));
         }
+
         // Split out the most deviating bbox
         for edge in &edges[1..] {
             graph.add_edge(*map.get(&edge.0).unwrap(), *map.get(&edge.1).unwrap(), ());
         }
+        let map = map
+            .into_iter()
+            .map(|(k, v)| (v, k))
+            .collect::<HashMap<NodeIndex, usize>>();
+
         Ok(connected_components_sets(&graph)
             .into_iter()
-            .map(|node_set| split_text_region(bboxes, node_set, width, height, gamma, sigma))
+            .map(|node_set| {
+                split_text_region(
+                    bboxes,
+                    node_set
+                        .into_iter()
+                        .map(|v| (*&map[&v] as u32).into())
+                        .collect::<Vec<NodeIndex>>(),
+                    width,
+                    height,
+                    gamma,
+                    sigma,
+                )
+            })
             .collect::<Result<Vec<_>, _>>()?
             .into_iter()
             .flatten()
@@ -746,34 +771,46 @@ fn remove_leading_spaces_after_predict(stripped_text: &str) -> String {
     new_stripped_text
 }
 
-#[test]
-fn testssss() {
-    let v: Vec<_> = [
-        [[412_i64, 4634], [591, 4634], [591, 4707], [412, 4707]],
-        [[585, 1987], [795, 1991], [794, 2067], [584, 2063]],
-        [[219, 5258], [445, 5262], [444, 5338], [218, 5334]],
-        [[204, 4492], [437, 4492], [437, 4568], [204, 4568]],
-        [[236, 2976], [542, 2976], [542, 3050], [236, 3050]],
-        [[670, 2263], [970, 2262], [971, 2333], [670, 2335]],
-        [[670, 2121], [968, 2121], [968, 2186], [670, 2186]],
-        [[434, 5499], [806, 5499], [806, 5564], [434, 5564]],
-        [[173, 2908], [603, 2908], [603, 2973], [173, 2973]],
-        [[277, 4708], [722, 4712], [722, 4777], [277, 4773]],
-        [[583, 2194], [1063, 2194], [1063, 2258], [583, 2258]],
-        [[136, 3052], [640, 3052], [640, 3117], [136, 3117]],
-        [[201, 440], [728, 440], [728, 500], [201, 500]],
-        [[334, 5424], [912, 5428], [912, 5493], [334, 5489]],
-    ]
-    .into_iter()
-    .map(|v| Quadrilateral::new(v.into_iter().map(|v| (v[0], v[1])).collect(), 1.0))
-    .map(|v| QuadrilateralInfo {
-        text: "".to_string(),
-        fg: None,
-        bg: None,
-        pos: Arc::new(v.into()),
-        prob: 1.0,
-    })
-    .collect();
-    let d = LangIdDetector::new().unwrap();
-    dispatch(v.iter().collect::<Vec<_>>(), 1080, 6587, &d).unwrap();
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use interface_detector::textlines::Quadrilateral;
+    use interface_ocr::QuadrilateralInfo;
+    use interface_translator::LangIdDetector;
+
+    use crate::dispatch;
+
+    #[test]
+    fn testssss() {
+        let v: Vec<_> = [
+            [[412_i64, 4634], [591, 4634], [591, 4707], [412, 4707]],
+            [[585, 1987], [795, 1991], [794, 2067], [584, 2063]],
+            [[219, 5258], [445, 5262], [444, 5338], [218, 5334]],
+            [[204, 4492], [437, 4492], [437, 4568], [204, 4568]],
+            [[236, 2976], [542, 2976], [542, 3050], [236, 3050]],
+            [[670, 2263], [970, 2262], [971, 2333], [670, 2335]],
+            [[670, 2121], [968, 2121], [968, 2186], [670, 2186]],
+            [[434, 5499], [806, 5499], [806, 5564], [434, 5564]],
+            [[173, 2908], [603, 2908], [603, 2973], [173, 2973]],
+            [[277, 4708], [722, 4712], [722, 4777], [277, 4773]],
+            [[583, 2194], [1063, 2194], [1063, 2258], [583, 2258]],
+            [[136, 3052], [640, 3052], [640, 3117], [136, 3117]],
+            [[201, 440], [728, 440], [728, 500], [201, 500]],
+            [[334, 5424], [912, 5428], [912, 5493], [334, 5489]],
+        ]
+        .into_iter()
+        .map(|v| Quadrilateral::new(v.into_iter().map(|v| (v[0], v[1])).collect(), 1.0))
+        .map(|v| QuadrilateralInfo {
+            text: "".to_string(),
+            fg: None,
+            bg: None,
+            pos: Arc::new(v.into()),
+            prob: 1.0,
+        })
+        .collect();
+        let d = LangIdDetector::new().unwrap();
+        let out = dispatch(v.iter().collect::<Vec<_>>(), 1080, 6587, &d).unwrap();
+        assert_eq!(out.len(), 9)
+    }
 }
