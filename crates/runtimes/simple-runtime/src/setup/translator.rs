@@ -1,10 +1,10 @@
 use std::{collections::HashMap, env};
 
-use interface_translator::ComputeType;
+use interface_translator::{AsyncTranslator, ComputeType};
 use strum::IntoEnumIterator;
 
 use crate::settings::Translator;
-pub type TranslatorType = Box<dyn interface_translator::Translator + Send + Sync>;
+pub type TranslatorType = Box<dyn AsyncTranslator + Send + Sync>;
 
 pub struct Translators(HashMap<Translator, TranslatorType>);
 
