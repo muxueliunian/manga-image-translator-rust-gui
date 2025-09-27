@@ -74,25 +74,14 @@ impl Models {
         info!("Run Translator: {:?}", translator_info.translator);
         let to = translator_info.target.0;
         let translator = self.get_translator(translator_info.translator);
-        let translations = if translator.local() {
-            // TODO: set fallback language in config
-            let from = input.lang.ok_or(anyhow!("Failed to detect language"))?;
-            let t = translator
-                .translator_mut()
-                .as_blocking()
-                .unwrap()
-                .translate_vec(&input.text, None, from, &to)?;
-            let d_str = t.join(" ");
-            let lang = self.lang_detector.detect_language(&d_str);
-            TranslationListOutput { text: t, lang }
-        } else {
-            translator
-                .translator()
-                .as_async()
-                .unwrap()
-                .translate_vec(&input.text, None, input.lang, &to)
-                .await?
-        };
-        Ok(translations)
+        // TODO: set fallback language in config
+        let from = input.lang.ok_or(anyhow!("Failed to detect language"))?;
+        let t = translator
+            .translate_vec(&input.text, None, Some(from), &to)
+            .await?;
+        let d_str = t.text.join(" ");
+        let lang = self.lang_detector.detect_language(&d_str);
+
+        Ok(TranslationListOutput { text: t.text, lang })
     }
 }
