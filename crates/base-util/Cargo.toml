@@ -8,12 +8,15 @@ ort = { workspace = true, optional = true, features = [
     "cuda",
     "coreml",
     "tensorrt",
+    "rocm",
+    "directml",
 ] }
 ndarray.workspace = true
 anyhow.workspace = true
 thiserror.workspace = true
 opencv = { workspace = true, optional = true, features = ["clang-runtime"] }
 ureq.workspace = true
+log.workspace = true
 
 [features]
 default = []
