@@ -38,6 +38,7 @@ pub struct TranslatorSettings {
     /// Filters out languages that should not be translated
     pub filter_lang: Vec<LanguageWrapper>,
     pub pre_dict: Option<String>,
+    pub post_dict: Option<String>,
 }
 
 impl Default for TranslatorSettings {
@@ -49,6 +50,7 @@ impl Default for TranslatorSettings {
             })),
             filter_lang: vec![],
             pre_dict: None,
+            post_dict: None,
         }
     }
 }

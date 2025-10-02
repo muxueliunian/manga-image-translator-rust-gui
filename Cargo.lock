@@ -820,6 +820,7 @@ name = "base-util"
 version = "0.11.0"
 dependencies = [
  "anyhow",
+ "log",
  "ndarray",
  "opencv",
  "ort",

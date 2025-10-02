@@ -97,6 +97,8 @@ impl Models {
             )?;
         }
 
+        let textblocks = self.run_post_dict(textblocks, &config.translator)?;
+
         let mask_refined = Models::run_mask_refinement(
             &upscaled_img,
             &mask,
