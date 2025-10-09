@@ -21,7 +21,6 @@ class ImageOverlayManager {
     const div = document.createElement("div");
     div.className = "text-box";
     div.textContent = overlay.text;
-    div.style.backgroundImage = `url('${overlay.background}')`;
 
     this.updateOverlayPosition(overlay, div);
     // $(div).fitText(0.5);

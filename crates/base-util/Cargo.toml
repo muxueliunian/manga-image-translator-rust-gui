@@ -4,12 +4,7 @@ version.workspace = true
 edition.workspace = true
 
 [dependencies]
-ort = { workspace = true, optional = true, features = [
-    "cuda",
-    "coreml",
-    "tensorrt",
-    "rocm",
-] }
+ort = { workspace = true, optional = true }
 ndarray.workspace = true
 anyhow.workspace = true
 thiserror.workspace = true

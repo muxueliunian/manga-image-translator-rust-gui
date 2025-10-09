@@ -112,6 +112,11 @@ base64 = "0.22.1"
 zip = "5.1.1"
 async-scoped = "0.9.0"
 ort-parallel = "0.1.0"
+tracing-subscriber = "0.3.20"
+tracing = "0.1.41"
+actix-web = "4"
+actix-files = "0.6"
+actix-multipart = "0.7"
 
 [patch.crates-io]
 clipper2c-sys = { git = "https://github.com/tirithen/clipper2c-sys" }

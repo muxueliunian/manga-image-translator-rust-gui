@@ -126,6 +126,7 @@ class Image:
 
 
 def load_image(data: bytes) -> Image:
+    print(data[:20])
     img = Image()
     offset = 0
 
@@ -143,6 +144,7 @@ def load_image(data: bytes) -> Image:
     raw_data = data[offset : offset + data_len]
 
     if img.raw:
+        print(img.width, img.height, img.width * img.height)
         total_pixels = img.height * img.width
         total_values = len(raw_data)
 
@@ -158,56 +160,35 @@ def load_image(data: bytes) -> Image:
     return img, offset
 
 
-class Patch:
-    info: RustTextBlock | None
-    bg: Image | None
-
-    def __init__(self):
-        self.pos = (0, 0)
-        self.bg = None  # Image
-        self.info = None  # RustTextBlock
-
-    def __repr__(self):
-        return f"Patch<{self.pos[0]}x{self.pos[1]} | {self.bg} | {self.info} >"
-
-
-def load_patch(data: bytes) -> Patch:
-    patch = Patch()
-    offset = 0
-
-    (x,) = struct.unpack_from("<Q", data, offset)
-    offset += 8
-    (y,) = struct.unpack_from("<Q", data, offset)
-    offset += 8
-    patch.pos = (x, y)
-
-    patch.bg, total_bg_bytes = load_image(data[offset:])
-    offset += total_bg_bytes
-
-    patch.info, new_offset = load_textblock(data[offset:])
-    offset += new_offset
-    return patch, offset
-
-
 class Export:
     img: Image
+    overlay: Image
 
     def __init__(self):
         self.img = None  # Image
+        self.overlay = None  # Image
         self.patches = []
 
 
 def load_export(data: bytes) -> Export:
     export = Export()
+    if data[:9] != b"mit-rust:":
+        raise ValueError("Invalid export format", data[:9])
+    version = struct.unpack("<I", data[9:13])[0]
+    if version != 2:
+        raise ValueError("Invalid export format", data[9:13])
 
+    data = data[13:]
     export.img, offset = load_image(data)
 
+    export.overlay, add_offset = load_image(data[offset:])
+    offset += add_offset
     (num_patches,) = struct.unpack_from("<Q", data, offset)
     offset += 8
 
     patches = []
     for _ in range(num_patches):
-        patch, new_offset = load_patch(data[offset:])
+        patch, new_offset = load_textblock(data[offset:])
         offset += new_offset
         patches.append(patch)
     export.patches = patches
@@ -313,9 +294,9 @@ async def main():
     )
     parser.add_argument(
         "--renderer",
-        type=Renderer,
-        default=Renderer.manga2EngPillow,
-        choices=list(Renderer),
+        type=str,
+        default=Renderer.manga2EngPillow.value,  # use .value for str
+        choices=[r.value for r in Renderer],  # choices must be strings
         help="Select the renderer.",
     )
     parser.add_argument(
@@ -337,6 +318,7 @@ async def main():
         "--font_size_minimum", type=int, default=-1, help="Minimum font size allowed."
     )
     args = parser.parse_args()
+    renderer = Renderer(args.renderer)
 
     # Configure logging
     logging.basicConfig(level=logging.DEBUG, format="%(levelname)s: %(message)s")
@@ -352,31 +334,23 @@ async def main():
     export = load_export(data)
     img = export.img.data
     orig_rgb_img = img.copy()[..., :3]
+    overlay = export.overlay.data
+    mask = overlay[..., 3] > 127
+
+    mask_3 = np.stack([mask] * 3, axis=-1)
+    img[..., :3] = np.where(mask_3, overlay[..., :3], img[..., :3])
+
     blocks = []
     for patch in export.patches:
-        patch: Patch
-        x = patch.pos[0]
-        y = patch.pos[1]
-        patch_h, patch_w = patch.bg.height, patch.bg.width
-
-        ph = min(patch_h, img.shape[0] - y)
-        pw = min(patch_w, img.shape[1] - x)
-        mask = patch.bg.data[:ph, :pw, 3:4] >= 128
-        rgb_channels = img[..., :3]
-        rgb_channels[y : y + ph, x : x + pw] = patch.bg.data[:ph, :pw, :3] * mask + img[
-            y : y + ph, x : x + pw
-        ] * (1 - mask)
-        fg_color = tuple(c / 255 for c in (patch.info.fg_color or (0, 0, 0)))
-        bg_color = tuple(c / 255 for c in (patch.info.bg_color or (255, 255, 255)))
+        fg_color = tuple(c / 255 for c in (patch.fg_color or (0, 0, 0)))
+        bg_color = tuple(c / 255 for c in (patch.bg_color or (255, 255, 255)))
         block = mit_renderer.TextBlock(
-            patch.info.lines,
-            [patch.info.text],
-            translation=patch.info.translations.get(
-                patch.info.translations.get("last_trans")
-            ),
-            font_size=patch.info.font_size,
-            angle=patch.info.angle,
-            prob=patch.info.lines,
+            patch.lines,
+            [patch.text],
+            translation=patch.translations.get(patch.translations.get("last_trans")),
+            font_size=patch.font_size,
+            angle=patch.angle,
+            prob=patch.lines,
             fg_color=fg_color,
             bg_color=bg_color,
         )
@@ -384,7 +358,7 @@ async def main():
 
     img_inpainted = img[..., :3]
     img = await run_render(
-        args.renderer,
+        renderer,
         blocks,
         orig_rgb_img,
         img_inpainted,

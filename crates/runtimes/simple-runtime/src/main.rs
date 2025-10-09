@@ -8,6 +8,7 @@ use clap::Parser as _;
 use config::Config;
 use html::HtmlRenderer;
 use log::{error, info, warn};
+use tracing_subscriber::EnvFilter;
 use walkdir::WalkDir;
 
 use crate::{
@@ -16,6 +17,7 @@ use crate::{
     update::{check_crate_version, check_cuda},
 };
 
+mod api;
 mod cache;
 pub mod cli;
 mod debug;
@@ -29,9 +31,6 @@ mod update;
 #[tokio::main]
 async fn main() {
     let ui = std::env::args().count() == 1;
-    env_logger::Builder::new()
-        .filter(None, log::LevelFilter::Info)
-        .init();
     if ui {
         let native_options = eframe::NativeOptions {
             viewport: egui::ViewportBuilder::default()
@@ -54,11 +53,25 @@ async fn main() {
         .expect("Failed to run egui");
         return;
     }
+    let cli = cli::Cli::parse();
+    let (level, ort_level) = match cli.verbose {
+        3 | 2 => ("debug", "ort=debug"),
+        1 => ("info", "ort=warn"),
+        _ => ("warn", "ort=error"),
+    };
+
+    let base_filter = EnvFilter::new(level);
+    let filter = base_filter.add_directive(ort_level.parse().unwrap());
+
+    tracing_subscriber::fmt()
+        .with_level(true)
+        .with_target(true)
+        .with_env_filter(filter)
+        .init();
     let cuda = check_cuda();
     if !cuda && cfg!(all(target_arch = "x86_64", not(target_os = "macos"))) {
         warn!("CUDA is not available")
     }
-    let cli = cli::Cli::parse();
     let _ = check_crate_version("frederik-uni/manga-image-translator-rust").await;
     let mut input = WalkDir::new(&cli.input)
         .into_iter()
@@ -71,6 +84,16 @@ async fn main() {
                 .map(|v| v.to_path_buf())
                 .unwrap_or(v)
         })
+        //TODO: add other extensions
+        .filter(|v| {
+            ["png", "jpg", "jpeg", "webp"].contains(
+                &v.extension()
+                    .map(|v| v.to_string_lossy())
+                    .unwrap_or_default()
+                    .to_lowercase()
+                    .as_str(),
+            )
+        })
         .collect::<Vec<_>>();
     let mut settings = Config::builder();
     if let Some(config) = cli.config {
@@ -81,20 +104,14 @@ async fn main() {
     }
     let settings = settings.build().expect("Failed to build settings");
     let settings = settings.try_deserialize::<Settings>().unwrap_or_default();
+    let out_ext = settings.render.renderer.extension();
+    input.iter_mut().for_each(|v| {
+        v.set_extension(out_ext);
+    });
     if !cli.overwrite {
-        //TODO: add other extensions
         input = input
             .into_iter()
             .filter(|v| !cli.output.join(v).exists())
-            .filter(|v| {
-                ["png", "jpg", "jpeg", "webp"].contains(
-                    &v.extension()
-                        .map(|v| v.to_string_lossy())
-                        .unwrap_or_default()
-                        .to_lowercase()
-                        .as_str(),
-                )
-            })
             .collect::<Vec<_>>();
     }
     let mut models = Models::new(
@@ -106,7 +123,7 @@ async fn main() {
     .await;
     for path in input {
         info!("Processing {}", path.display());
-        let mut output = cli.output.join(&path);
+        let output = cli.output.join(&path);
         let path = cli.input.join(path);
         if !path.exists() || !path.is_file() {
             warn!("File {} cant be found", path.display());
@@ -137,7 +154,6 @@ async fn main() {
         };
         if settings.render.renderer == Renderer::Html {
             let (data, _) = HtmlRenderer::render(vec![exp], None, false);
-            output.set_extension("html");
             if let Some(parent) = output.parent() {
                 create_dir_all(parent).expect("Failed to create parent directory");
                 html::copy_files(parent).expect("Failed to copy important js files");
@@ -145,7 +161,6 @@ async fn main() {
             File::create(output).unwrap().write_all(&data).unwrap();
         } else {
             let bin = exp.export();
-            output.set_extension("mit.bin");
             if let Some(parent) = output.parent() {
                 create_dir_all(parent).expect("Failed to create parent directory");
             }

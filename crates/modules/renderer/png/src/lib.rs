@@ -40,47 +40,47 @@ pub enum MyAlign {
 impl PngRenderer {
     pub fn render(&mut self, exp: Export, config: PngRenderConfig) -> RawImage {
         let mut img = exp.get_image();
-        for patch in exp.patches {
-            let patch_img = patch.get_image();
-            let (x, y) = patch.pos;
-            img.apply_patch(&patch_img, x as u16, y as u16);
-            let text = patch.info;
-            let obb = text.obb().unwrap();
-            let mut render_block = RenderTextBlock {
-                align: match config.align {
-                    MyAlign::Left => Align::Left,
-                    MyAlign::Center => Align::Center,
-                    MyAlign::Right => Align::Right,
-                },
-                default_font_size: config.font_size,
-                default_line_height: config.line_height,
-                vertical: false,
-                size: (obb.w as usize, obb.h as usize),
-                texts: vec![Text {
-                    text: text.text,
-                    letter_spacing: config.letter_spacing,
-                    color: config.fg_color.or(text.fg_color),
-                    bg_color: config.bg_color.or(text.bg_color),
-                    font_size: config.font_size,
-                    line_height: config.line_height,
-                    family: config.family.clone(),
-                    weight: None,
-                    style: Style::Normal,
-                    stretch: None,
-                }],
-            };
+        // for patch in exp.patches {
+        //     let patch_img = patch.get_image();
+        //     let (x, y) = patch.pos;
+        //     img.apply_patch(&patch_img, x as u16, y as u16);
+        //     let text = patch.info;
+        //     let obb = text.obb().unwrap();
+        //     let mut render_block = RenderTextBlock {
+        //         align: match config.align {
+        //             MyAlign::Left => Align::Left,
+        //             MyAlign::Center => Align::Center,
+        //             MyAlign::Right => Align::Right,
+        //         },
+        //         default_font_size: config.font_size,
+        //         default_line_height: config.line_height,
+        //         vertical: false,
+        //         size: (obb.w as usize, obb.h as usize),
+        //         texts: vec![Text {
+        //             text: text.text,
+        //             letter_spacing: config.letter_spacing,
+        //             color: config.fg_color.or(text.fg_color),
+        //             bg_color: config.bg_color.or(text.bg_color),
+        //             font_size: config.font_size,
+        //             line_height: config.line_height,
+        //             family: config.family.clone(),
+        //             weight: None,
+        //             style: Style::Normal,
+        //             stretch: None,
+        //         }],
+        //     };
 
-            let font_size = self
-                .max_fontsize((obb.w as usize, obb.h as usize), render_block.clone(), 1.0)
-                .clamp(
-                    text.font_size as f32 - config.detect_offset,
-                    text.font_size as f32 + config.detect_offset,
-                )
-                .clamp(config.min_fontsize, config.max_fontsize)
-                .round() as u32;
-            render_block.set_font_size(font_size as f32);
-            let img = self.render_block(render_block);
-        }
+        //     let font_size = self
+        //         .max_fontsize((obb.w as usize, obb.h as usize), render_block.clone(), 1.0)
+        //         .clamp(
+        //             text.font_size as f32 - config.detect_offset,
+        //             text.font_size as f32 + config.detect_offset,
+        //         )
+        //         .clamp(config.min_fontsize, config.max_fontsize)
+        //         .round() as u32;
+        //     render_block.set_font_size(font_size as f32);
+        //     let img = self.render_block(render_block);
+        // }
         img
     }
 }

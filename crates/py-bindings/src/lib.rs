@@ -8,8 +8,7 @@ use interface_detector::textlines::Quadrilateral;
 use interface_detector::{DefaultOptions, Detector, PreprocessorOptions};
 use interface_image::{CpuImageProcessor, ImageOp, RawImage};
 use interface_ocr::QuadrilateralInfo;
-use interface_translator::{LangIdDetector, Language, M2M100Size, Translator};
-use numpy::ndarray::{ArrayView, ArrayView3};
+use interface_translator::{AsyncTranslator, LangIdDetector, Language, M2M100Size};
 use numpy::{
     ndarray::{Array2, Array3},
     IntoPyArray as _, PyArray2, PyArray3, PyArrayMethods, PyReadonlyArray3,
@@ -105,27 +104,23 @@ impl Session {
 
     fn jparacrawl_translator(&self, cuda: bool, big: bool) -> PyTranslator {
         PyTranslator {
-            inner: Arc::new(Mutex::new(
-                Box::new(interface_translator::JParaCrawlTranslator::new(
-                    false,
-                    cuda,
-                    Default::default(),
-                    match big {
-                        true => interface_translator::JParaCrawlSize::Large,
-                        false => interface_translator::JParaCrawlSize::Base,
-                    },
-                )) as Box<dyn Translator + Send + Sync>,
-            )),
+            inner: Arc::new(Box::new(interface_translator::JParaCrawlTranslator::new(
+                false,
+                cuda,
+                Default::default(),
+                match big {
+                    true => interface_translator::JParaCrawlSize::Large,
+                    false => interface_translator::JParaCrawlSize::Base,
+                },
+            )) as Box<dyn AsyncTranslator + Send + Sync>),
         }
     }
 
     fn youdao_translator(&self, app_key: String, app_secret: String) -> PyTranslator {
         PyTranslator {
-            inner: Arc::new(Mutex::new(
-                Box::new(interface_translator::YoudaoTranslator::new(
-                    app_key, app_secret,
-                )) as Box<dyn Translator + Send + Sync>,
-            )),
+            inner: Arc::new(Box::new(interface_translator::YoudaoTranslator::new(
+                app_key, app_secret,
+            )) as Box<dyn AsyncTranslator + Send + Sync>),
         }
     }
 
@@ -136,96 +131,82 @@ impl Session {
                 .map_err(|v| PyRuntimeError::new_err(v.to_string()))
         })?;
         Ok(PyTranslator {
-            inner: Arc::new(Mutex::new(Box::new(v) as Box<dyn Translator + Send + Sync>)),
+            inner: Arc::new(Box::new(v) as Box<dyn AsyncTranslator + Send + Sync>),
         })
     }
     fn nllb_translator(&self, cuda: bool, big: bool) -> PyTranslator {
         PyTranslator {
-            inner: Arc::new(Mutex::new(
-                Box::new(interface_translator::NLLBTranslator::new(
-                    cuda,
-                    Default::default(),
-                    if big {
-                        interface_translator::NLLBSize::Large
-                    } else {
-                        interface_translator::NLLBSize::SmallDistilled
-                    },
-                )) as Box<dyn Translator + Send + Sync>,
-            )),
+            inner: Arc::new(Box::new(interface_translator::NLLBTranslator::new(
+                cuda,
+                Default::default(),
+                if big {
+                    interface_translator::NLLBSize::Large
+                } else {
+                    interface_translator::NLLBSize::SmallDistilled
+                },
+            )) as Box<dyn AsyncTranslator + Send + Sync>),
         }
     }
 
     fn m2m100_translator(&self, cuda: bool, big: bool) -> PyTranslator {
         PyTranslator {
-            inner: Arc::new(Mutex::new(
-                Box::new(interface_translator::M2M100Translator::new(
-                    cuda,
-                    Default::default(),
-                    if big {
-                        M2M100Size::Large
-                    } else {
-                        M2M100Size::Small
-                    },
-                )) as Box<dyn Translator + Send + Sync>,
-            )),
+            inner: Arc::new(Box::new(interface_translator::M2M100Translator::new(
+                cuda,
+                Default::default(),
+                if big {
+                    M2M100Size::Large
+                } else {
+                    M2M100Size::Small
+                },
+            )) as Box<dyn AsyncTranslator + Send + Sync>),
         }
     }
 
     fn my_memory_translator(&self) -> PyTranslator {
         PyTranslator {
-            inner: Arc::new(Mutex::new(
-                Box::new(interface_translator::MyMemoryTranslator::new())
-                    as Box<dyn Translator + Send + Sync>,
-            )),
+            inner: Arc::new(Box::new(interface_translator::MyMemoryTranslator::new())
+                as Box<dyn AsyncTranslator + Send + Sync>),
         }
     }
 
     fn mbart50_translator(&self, cuda: bool) -> PyTranslator {
         PyTranslator {
-            inner: Arc::new(Mutex::new(
-                Box::new(interface_translator::MBart50Translator::new(
-                    cuda,
-                    Default::default(),
-                )) as Box<dyn Translator + Send + Sync>,
-            )),
+            inner: Arc::new(Box::new(interface_translator::MBart50Translator::new(
+                cuda,
+                Default::default(),
+            )) as Box<dyn AsyncTranslator + Send + Sync>),
         }
     }
 
     fn google_translator(&self, api_key: String) -> PyTranslator {
         PyTranslator {
-            inner: Arc::new(Mutex::new(
+            inner: Arc::new(
                 Box::new(interface_translator::GoogleTranslator::new(api_key))
-                    as Box<dyn Translator + Send + Sync>,
-            )),
+                    as Box<dyn AsyncTranslator + Send + Sync>,
+            ),
         }
     }
 
     fn deepl_translator(&self, auth: String) -> PyTranslator {
         PyTranslator {
-            inner: Arc::new(Mutex::new(
-                Box::new(interface_translator::DeeplTranslator::new(auth))
-                    as Box<dyn Translator + Send + Sync>,
-            )),
+            inner: Arc::new(Box::new(interface_translator::DeeplTranslator::new(auth))
+                as Box<dyn AsyncTranslator + Send + Sync>),
         }
     }
     fn caiyun_translator(&self, token: String, request_id: String) -> PyTranslator {
         PyTranslator {
-            inner: Arc::new(Mutex::new(
-                Box::new(interface_translator::CaiyunTranslator::new(
-                    token, request_id,
-                )) as Box<dyn Translator + Send + Sync>,
-            )),
+            inner: Arc::new(Box::new(interface_translator::CaiyunTranslator::new(
+                token, request_id,
+            )) as Box<dyn AsyncTranslator + Send + Sync>),
         }
     }
 
     fn sugoi_translator(&self, cuda: bool) -> PyTranslator {
         PyTranslator {
-            inner: Arc::new(Mutex::new(
-                Box::new(interface_translator::SugoiTranslator::new(
-                    cuda,
-                    Default::default(),
-                )) as Box<dyn Translator + Send + Sync>,
-            )),
+            inner: Arc::new(Box::new(interface_translator::SugoiTranslator::new(
+                cuda,
+                Default::default(),
+            )) as Box<dyn AsyncTranslator + Send + Sync>),
         }
     }
 
@@ -325,7 +306,7 @@ pub struct PyDetector {
 
 #[pyclass]
 pub struct PyTranslator {
-    inner: Arc<Mutex<Box<dyn Translator + Send + Sync>>>,
+    inner: Arc<Box<dyn AsyncTranslator + Send + Sync>>,
 }
 #[pymethods]
 impl PyTranslator {
@@ -336,44 +317,22 @@ impl PyTranslator {
         from: &str,
         to: &str,
     ) -> PyResult<Vec<String>> {
+        let to =
+            Language::from_name(to).ok_or(PyRuntimeError::new_err("language not supported"))?;
         py.allow_threads(|| {
-            let mut t = self.inner.lock();
-            if t.local() {
-                t.translator_mut()
-                    .as_blocking()
-                    .ok_or(PyRuntimeError::new_err(
-                        "translator does not support blocking",
-                    ))?
-                    .translate_vec(
-                        &input,
-                        None,
-                        Language::from_name(from)
-                            .ok_or(PyRuntimeError::new_err("language not supported"))?,
-                        &Language::from_name(to)
-                            .ok_or(PyRuntimeError::new_err("language not supported"))?,
-                    )
-                    .map_err(|v| PyRuntimeError::new_err(v.to_string()))
-            } else {
-                let rt = get_runtime();
-                let temp = rt
-                    .block_on(
-                        t.translator()
-                            .as_async()
-                            .ok_or(PyRuntimeError::new_err("translator does not support async"))?
-                            .translate_vec(
-                                &input,
-                                None,
-                                Some(
-                                    Language::from_name(from)
-                                        .ok_or(PyRuntimeError::new_err("language not supported"))?,
-                                ),
-                                &Language::from_name(to)
-                                    .ok_or(PyRuntimeError::new_err("language not supported"))?,
-                            ),
-                    )
-                    .map_err(|v| PyRuntimeError::new_err(v.to_string()))?;
-                Ok(temp.text)
-            }
+            let t = self.inner.translate_vec(
+                &input,
+                None,
+                Some(
+                    Language::from_name(from)
+                        .ok_or(PyRuntimeError::new_err("language not supported"))?,
+                ),
+                &to,
+            );
+            get_runtime()
+                .block_on(t)
+                .map_err(|e| PyRuntimeError::new_err(e.to_string()))
+                .map(|v| v.text)
         })
     }
 }
@@ -465,9 +424,8 @@ impl PyQuadrilateral {
 #[pymethods]
 impl PyDetector {
     fn load(&self) -> PyResult<()> {
-        self.inner
-            .lock()
-            .reload_()
+        get_runtime()
+            .block_on(self.inner.lock().reload_())
             .map_err(|e| PyRuntimeError::new_err(e.to_string()))
     }
 
@@ -488,9 +446,12 @@ impl PyDetector {
         let processor = self.processor.clone();
         let det = py
             .allow_threads(|| {
-                inner
-                    .lock()
-                    .detect(&img, preprocessor_options, options, &*processor)
+                get_runtime().block_on(inner.lock().detect(
+                    &img,
+                    preprocessor_options,
+                    options,
+                    &*processor,
+                ))
             })
             .map_err(|e| PyRuntimeError::new_err(e.to_string()));
         let (qua, mask) = det?;
@@ -508,11 +469,11 @@ impl PyDetector {
     }
 
     fn unload(&mut self) {
-        self.inner.lock().unload()
+        get_runtime().block_on(self.inner.lock().unload())
     }
 
     fn loaded(&self) -> bool {
-        self.inner.lock().loaded_()
+        get_runtime().block_on(self.inner.lock().loaded_())
     }
 }
 
@@ -522,14 +483,14 @@ fn rusty_manga_image_translator(m: &Bound<'_, PyModule>) -> PyResult<()> {
     let yellow = "\x1b[33m";
     let reset = "\x1b[0m";
 
-    // println!(
-    //     "{}⚠️  Warning: You are using the experimental Python version of this project.{}",
-    //     red, reset
-    // );
-    // println!(
-    //         "{}This version is unstable and may break frequently. Please switch to the Rust rewrite for reliability! https://github.com/frederik-uni/manga-image-translator-rust{}",
-    //         yellow, reset
-    //     );
+    println!(
+        "{}⚠️  Warning: You are using the experimental Python version of this project.{}",
+        red, reset
+    );
+    println!(
+            "{}This version is unstable and may break frequently. Please switch to the Rust rewrite for reliability! The rust version is an early release so it might still have some issues. https://github.com/frederik-uni/manga-image-translator-rust{}",
+            yellow, reset
+        );
     m.add_class::<Session>()?;
     m.add_class::<PyDetector>()?;
     m.add_class::<PyImage>()?;

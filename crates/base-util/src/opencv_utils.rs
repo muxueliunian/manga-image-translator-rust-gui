@@ -11,7 +11,7 @@ pub fn to_continous(value: Mat) -> Mat {
     }
 }
 
-pub fn to_continous2(value: &Mat) -> Cow<Mat> {
+pub fn to_continous2(value: &Mat) -> Cow<'_, Mat> {
     if value.is_continuous() {
         Cow::Borrowed(value)
     } else {

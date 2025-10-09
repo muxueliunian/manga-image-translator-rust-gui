@@ -1,6 +1,6 @@
 use std::{collections::HashMap, sync::Arc};
 
-use base_util::onnx::gpu_providers;
+use base_util::onnx::all_providers;
 use strum::IntoEnumIterator;
 
 use crate::settings::Inpainter;
@@ -13,7 +13,7 @@ impl Inpainters {
     }
     pub fn new() -> Self {
         let mut items = HashMap::new();
-        let providers = Arc::new(gpu_providers());
+        let providers = Arc::new(all_providers());
         for key in Inpainter::iter() {
             let inpainter = match key {
                 Inpainter::LamaAot => {

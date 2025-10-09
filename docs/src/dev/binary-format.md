@@ -1,4 +1,4 @@
-# Binary Data Structure Version 1
+# Binary Data Structure Version 2
 
 > **Note:**
 >
@@ -10,13 +10,14 @@
 
 ## **Export**
 
-| Size | Type   | Description       |
-| ---- | ------ | ----------------- |
-| 9    | \_     | unknown/reserved  |
-| 4    | `uint` | version           |
-| ?    | Image  | embedded Image    |
-| 8    | `uint` | number of patches |
-| ?×n  | Patch  | n patches         |
+| Size | Type      | Description       |
+| ---- | --------- | ----------------- |
+| 9    | \_        | unknown/reserved  |
+| 4    | `uint`    | version           |
+| ?    | Image     | embedded Image    |
+| ?    | Image     | overlay Image     |
+| 8    | `uint`    | number of patches |
+| ?×n  | TextBlock | n blocks          |
 
 ---
 
@@ -60,16 +61,5 @@
 | n    | bytes   | original text        |
 | 8    | `uint`  | 4PTS count           |
 | n×64 | 4PTS    | 4PTS data            |
-
----
-
-## **Patch**
-
-| Size | Type      | Description        |
-| ---- | --------- | ------------------ |
-| 8    | `float`   | x                  |
-| 8    | `float`   | y                  |
-| ?    | Image     | embedded Image     |
-| ?    | TextBlock | embedded TextBlock |
 
 ---
