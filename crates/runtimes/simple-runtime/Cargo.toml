@@ -31,7 +31,7 @@ tesseract.workspace = true
 schemars.workspace = true
 ocr-48px.workspace = true
 html.workspace = true
-ort = { workspace = true, features = ["cuda"] }
+ort = { workspace = true }
 async-scoped = { workspace = true, features = ["use-tokio"] }
 util.workspace = true
 
@@ -62,6 +62,11 @@ export.workspace = true
 png.workspace = true
 reqwest = { workspace = true, features = ["json"] }
 anyhow.workspace = true
+tracing-subscriber= { workspace = true, features = ["env-filter"] }
+tracing.workspace = true
+actix-web.workspace = true
+actix-files.workspace = true
+actix-multipart.workspace = true
 # ui
 egui = "0.32"
 eframe = { version = "0.32", default-features = false, features = [
@@ -75,3 +80,16 @@ rfd = "0.15.4"
 
 [profile.dev.package."*"]
 opt-level = 2
+
+[features]
+cuda = ["ort/cuda"]
+coreml = ["ort/coreml"]
+tensorrt = ["ort/tensorrt"]
+rocm = ["ort/rocm"]
+
+
+[target.'cfg(target_os = "macos")'.features]
+default = ["coreml"]
+
+[target.'cfg(not(target_os = "macos"))'.features]
+default = ["cuda", "tensorrt"]

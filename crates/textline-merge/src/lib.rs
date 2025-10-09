@@ -5,7 +5,7 @@ use std::{
 
 use anyhow::anyhow;
 use geo::{ConvexHull, Distance as _, Euclidean, MinimumRotatedRect, MultiPoint, Point};
-use interface_detector::textlines::MyPoint;
+use interface_detector::textlines::{self, MyPoint};
 use interface_ocr::QuadrilateralInfo;
 use interface_translator::{is_valuable_text, Detector, Language, LanguageWrapper};
 use itertools::Itertools as _;
@@ -138,6 +138,27 @@ pub struct OBB {
     pub theta: f64,
 }
 
+impl OBB {
+    pub fn top_left(&self) -> (f64, f64) {
+        let hw = self.w / 2.0;
+        let hh = self.h / 2.0;
+        let cos_t = self.theta.cos();
+        let sin_t = self.theta.sin();
+
+        let dx = -hw;
+        let dy = -hh;
+
+        let x = self.x + dx * cos_t - dy * sin_t;
+        let y = self.y + dx * sin_t + dy * cos_t;
+
+        (x, y)
+    }
+
+    pub fn angle_deg(&self) -> f64 {
+        self.theta * 180.0 / PI
+    }
+}
+
 #[derive(Deserialize, Serialize)]
 pub struct TextBlock {
     pub lines: Vec<[MyPoint; 4]>,
@@ -153,6 +174,156 @@ pub struct TextBlock {
 }
 
 impl TextBlock {
+    pub fn load(data: &[u8]) -> Option<(Self, usize)> {
+        use std::convert::TryInto;
+        let mut offset = 0;
+
+        macro_rules! read {
+            ($ty:ty) => {{
+                if offset + std::mem::size_of::<$ty>() > data.len() {
+                    return None;
+                }
+                let bytes = &data[offset..offset + std::mem::size_of::<$ty>()];
+                offset += std::mem::size_of::<$ty>();
+                <$ty>::from_le_bytes(bytes.try_into().ok()?)
+            }};
+        }
+
+        let font_size = read!(u64);
+        let angle = read!(f64);
+        let prob = read!(f64);
+
+        let skip_translate = {
+            if offset >= data.len() {
+                return None;
+            }
+            let v = data[offset];
+            offset += 1;
+            v == 1
+        };
+
+        let fg_color = {
+            if offset >= data.len() {
+                return None;
+            }
+            let has = data[offset];
+            offset += 1;
+            if has == 1 {
+                if offset + 3 > data.len() {
+                    return None;
+                }
+                let r = data[offset];
+                let g = data[offset + 1];
+                let b = data[offset + 2];
+                offset += 3;
+                Some((r, g, b))
+            } else {
+                None
+            }
+        };
+
+        let bg_color = {
+            if offset >= data.len() {
+                return None;
+            }
+            let has = data[offset];
+            offset += 1;
+            if has == 1 {
+                if offset + 3 > data.len() {
+                    return None;
+                }
+                let r = data[offset];
+                let g = data[offset + 1];
+                let b = data[offset + 2];
+                offset += 3;
+                Some((r, g, b))
+            } else {
+                None
+            }
+        };
+
+        if offset + 8 > data.len() {
+            return None;
+        }
+        let text_len = u64::from_le_bytes(data[offset..offset + 8].try_into().ok()?) as usize;
+        offset += 8;
+        if offset + text_len > data.len() {
+            return None;
+        }
+        let text = String::from_utf8_lossy(&data[offset..offset + text_len]).to_string();
+        offset += text_len;
+
+        if offset + 8 > data.len() {
+            return None;
+        }
+        let line_count = u64::from_le_bytes(data[offset..offset + 8].try_into().ok()?) as usize;
+        offset += 8;
+        let mut lines = Vec::with_capacity(line_count);
+        for _ in 0..line_count {
+            let x1 = read!(i64);
+            let y1 = read!(i64);
+            let x2 = read!(i64);
+            let y2 = read!(i64);
+            let x3 = read!(i64);
+            let y3 = read!(i64);
+            let x4 = read!(i64);
+            let y4 = read!(i64);
+            lines.push([
+                textlines::MyPoint { x: x1, y: y1 },
+                textlines::MyPoint { x: x2, y: y2 },
+                textlines::MyPoint { x: x3, y: y3 },
+                textlines::MyPoint { x: x4, y: y4 },
+            ]);
+        }
+
+        if offset + 8 > data.len() {
+            return None;
+        }
+        let trans_count = u64::from_le_bytes(data[offset..offset + 8].try_into().ok()?) as usize;
+        offset += 8;
+        let mut translations = Vec::with_capacity(trans_count);
+        for _ in 0..trans_count {
+            if offset + 8 > data.len() {
+                return None;
+            }
+            let key_len = u64::from_le_bytes(data[offset..offset + 8].try_into().ok()?) as usize;
+            offset += 8;
+            if offset + key_len > data.len() {
+                return None;
+            }
+            let key = String::from_utf8_lossy(&data[offset..offset + key_len]).to_string();
+            offset += key_len;
+
+            if offset + 8 > data.len() {
+                return None;
+            }
+            let value_len = u64::from_le_bytes(data[offset..offset + 8].try_into().ok()?) as usize;
+            offset += 8;
+            if offset + value_len > data.len() {
+                return None;
+            }
+            let value = String::from_utf8_lossy(&data[offset..offset + value_len]).to_string();
+            offset += value_len;
+
+            translations.push((key, value));
+        }
+
+        Some((
+            Self {
+                font_size,
+                angle,
+                prob,
+                skip_translate,
+                fg_color,
+                bg_color,
+                text,
+                lines,
+                language: None,
+                translations: translations.into_iter().collect(),
+            },
+            offset,
+        ))
+    }
     pub fn export(self) -> Vec<u8> {
         let mut buffer = vec![];
         buffer.extend(self.font_size.to_le_bytes());

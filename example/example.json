@@ -37,8 +37,8 @@
   },
   "translator": {
     "target": { "translator": "NLLBSmallDistilled", "target": "en" },
-    "filter_lang": [],
+    "filter_lang": ["en"],
     "pre_dict": null
   },
-  "render": { "renderer": "Html" }
+  "render": { "renderer": "Raw" }
 }

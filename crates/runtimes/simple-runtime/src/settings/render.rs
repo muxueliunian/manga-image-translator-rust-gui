@@ -9,7 +9,16 @@ pub struct RenderSettings {
 
 #[derive(Serialize, Deserialize, Default, JsonSchema, PartialEq, Eq)]
 pub enum Renderer {
-    Raw,
     #[default]
+    Raw,
     Html,
+}
+
+impl Renderer {
+    pub fn extension(&self) -> &str {
+        match self {
+            Renderer::Raw => "mit.bin",
+            Renderer::Html => "html",
+        }
+    }
 }

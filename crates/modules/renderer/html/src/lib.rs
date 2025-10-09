@@ -1,6 +1,7 @@
 use std::fs::File;
 use std::io::Write;
 use std::path::Path;
+use std::ptr;
 
 use base64::engine::general_purpose;
 use base64::Engine as _;
@@ -45,33 +46,33 @@ impl HtmlRenderer {
                     }
                 }};
             }
-            let img = v.get_image();
+            let mut img = v.get_image();
+            let overlay = v.get_overlay();
 
-            for patch in v.patches {
-                let last = patch.info.translations.get("last_trans").unwrap();
-                let pimg = patch.get_image();
+            for patch in v.blocks {
+                let last = patch.translations.get("last_trans").unwrap();
+                let obb = patch.obb().unwrap();
+                let (x, y) = obb.top_left();
 
-                let (i, p_img) = insert!(pimg);
-                let bg = match archive {
-                    true => format!("./{}.png", i),
-                    false => to_base64_img(p_img),
-                };
                 jsons.push(JsonData {
-                    x: patch.pos.0 as u32,
-                    y: patch.pos.1 as u32,
-                    width: p_img.width as u32,
-                    height: p_img.height as u32,
-                    rotation: patch.info.angle as u32,
-                    color: patch.info.fg_color.unwrap_or((0, 0, 0)),
+                    x: x as u32,
+                    y: y as u32,
+                    width: obb.w as u32,
+                    height: obb.h as u32,
+                    rotation: obb.angle_deg() as u32,
+                    color: patch.fg_color.unwrap_or((0, 0, 0)),
                     shadow: patch
-                        .info
                         .bg_color
                         .map(|v| (v.0, v.1, v.2, 1.0))
                         .unwrap_or((255, 255, 255, 1.0)),
-                    text: patch.info.translations.get(last).unwrap().to_owned(),
-                    background: bg,
+                    text: patch.translations.get(last).unwrap().to_owned(),
                 });
             }
+            img.apply_filter(&overlay, |a, b| unsafe {
+                if *b.get_unchecked(3) > 128 {
+                    ptr::copy_nonoverlapping(b.as_ptr(), a.as_mut_ptr(), 3);
+                }
+            });
             let (index, img) = insert!(img);
 
             html.push(generate(font.clone(), jsons, index, img, archive));
@@ -92,7 +93,6 @@ pub struct JsonData {
     color: (u8, u8, u8),
     shadow: (u8, u8, u8, f32),
     text: String,
-    background: String,
 }
 
 fn to_base64_img(img: &RawImage) -> String {

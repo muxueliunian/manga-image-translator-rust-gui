@@ -1,6 +1,6 @@
 use std::{collections::HashMap, sync::Arc};
 
-use base_util::onnx::gpu_providers;
+use base_util::onnx::{all_providers, gpu_providers};
 use strum::IntoEnumIterator;
 
 use crate::settings::OCR;
@@ -14,7 +14,7 @@ impl OCRs {
     }
     pub fn new(max_batch_size: usize) -> Self {
         let mut items = HashMap::new();
-        let providers = Arc::new(gpu_providers());
+        let providers = Arc::new(all_providers());
         for key in OCR::iter() {
             let ocr = match key {
                 OCR::MangaOcr => {

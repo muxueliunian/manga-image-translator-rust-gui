@@ -23,8 +23,6 @@ ndarray = { workspace = true, features = ["rayon"] }
 ort = { workspace = true, features = [
     "ndarray",
     "download-binaries",
-    "cuda",
-    "coreml",
 ] }
 rayon.workspace = true
 base-util = { workspace = true, features = ["onnx", "opencv"] }

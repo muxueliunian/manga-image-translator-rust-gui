@@ -1,17 +1,45 @@
 use std::{io::Cursor, ops::Deref};
 
 use image::{
-    guess_format, write_buffer_with_format, DynamicImage, EncodableLayout, GenericImageView,
-    ImageBuffer, ImageFormat, Pixel, PixelWithColorType,
+    guess_format, write_buffer_with_format, DynamicImage, EncodableLayout, ImageBuffer,
+    ImageFormat, Pixel, PixelWithColorType,
 };
 use interface_image::RawImage;
 use textline_merge::TextBlock;
 pub struct Export {
     img: Image,
-    pub patches: Vec<Patch>,
+    overlay: Image,
+    pub blocks: Vec<TextBlock>,
 }
 
 impl Image {
+    pub fn load(data: &[u8]) -> Option<(Self, usize)> {
+        if data.len() < 17 {
+            return None;
+        }
+        let width = u16::from_le_bytes(data[0..2].try_into().ok()?);
+        let height = u16::from_le_bytes(data[2..4].try_into().ok()?);
+        let raw = data[4] != 0;
+        let data_len = u64::from_le_bytes(data[5..13].try_into().ok()?) as usize;
+
+        if data.len() < 13 + data_len {
+            return None;
+        }
+
+        let image_data = data[13..13 + data_len].to_vec();
+        let offset = 13 + data_len;
+
+        Some((
+            Self {
+                width,
+                height,
+                raw,
+                data: image_data,
+            },
+            offset,
+        ))
+    }
+
     pub fn export(self) -> Vec<u8> {
         let mut bytes = vec![];
         bytes.extend(self.width.to_le_bytes());
@@ -23,24 +51,43 @@ impl Image {
     }
 }
 
-impl Patch {
-    pub fn export(self) -> Vec<u8> {
-        let mut buffer = vec![];
-        buffer.extend((self.pos.0 as u64).to_le_bytes());
-        buffer.extend((self.pos.1 as u64).to_le_bytes());
-        buffer.extend(self.bg.export());
-        buffer.extend(self.info.export());
-        buffer
-    }
-}
-
 impl Export {
+    pub fn load(data: Vec<u8>) -> Option<Self> {
+        let skip = "mit-rust:".len() + 4;
+        let data = &data[skip..];
+        let (bg, off) = Image::load(data)?;
+        let data = &data[off..];
+        let (overlay, off) = Image::load(data)?;
+        let data = &data[off..];
+        if data.len() < 8 {
+            return None;
+        }
+
+        let count = u64::from_le_bytes(data[0..8].try_into().ok()?) as usize;
+        let mut offset = 8;
+        let mut blocks = Vec::with_capacity(count);
+
+        for _ in 0..count {
+            let (block, used) = TextBlock::load(&data[offset..])?;
+            offset += used;
+            blocks.push(block);
+        }
+        assert_eq!(data.len(), offset);
+
+        Some(Self {
+            img: bg,
+            overlay,
+            blocks,
+        })
+    }
+
     pub fn export(self) -> Vec<u8> {
         let mut buffer = b"mit-rust:".to_vec();
-        buffer.extend(1_u32.to_le_bytes());
+        buffer.extend(2_u32.to_le_bytes());
         buffer.extend(self.img.export());
-        buffer.extend((self.patches.len() as u64).to_le_bytes());
-        for patch in self.patches {
+        buffer.extend(self.overlay.export());
+        buffer.extend((self.blocks.len() as u64).to_le_bytes());
+        for patch in self.blocks {
             buffer.extend(patch.export())
         }
         buffer
@@ -77,34 +124,8 @@ impl Export {
         blocks: Vec<TextBlock>,
         format: Option<ImageFormat>,
     ) -> Self {
-        let mut patches = Vec::new();
-        for block in blocks {
-            let xyxy = block.xyxy();
-            let patch = inpainted.view(
-                xyxy.0 as u32,
-                xyxy.1 as u32,
-                xyxy.2 as u32 - xyxy.0 as u32,
-                xyxy.3 as u32 - xyxy.1 as u32,
-            );
-            let data = match format {
-                Some(format) => convert(&patch.to_image(), format),
-                None => patch.to_image().as_bytes().to_vec(),
-            };
-
-            patches.push(Patch {
-                info: block,
-                pos: (xyxy.0 as usize, xyxy.1 as usize),
-                bg: Image {
-                    width: patch.width() as u16,
-                    height: patch.height() as u16,
-                    data,
-                    raw: format.is_none(),
-                },
-            });
-        }
-
-        let raw_data = match format {
-            Some(format) => match &raw {
+        let raw_data_fn = |data: &DynamicImage| match format {
+            Some(format) => match data {
                 DynamicImage::ImageLuma8(img) => convert(img, format),
                 DynamicImage::ImageLumaA8(img) => convert(img, format),
                 DynamicImage::ImageRgb8(img) => convert(img, format),
@@ -117,8 +138,10 @@ impl Export {
                 DynamicImage::ImageRgba32F(img) => convert(img, format),
                 _ => unimplemented!("not implemented yet"),
             },
-            None => raw.as_bytes().to_vec(),
+            None => data.as_bytes().to_vec(),
         };
+        let raw_data = raw_data_fn(&raw);
+        let d = raw_data_fn(&inpainted);
         Self {
             img: Image {
                 width: raw.width() as u16,
@@ -126,12 +149,23 @@ impl Export {
                 data: raw_data,
                 raw: format.is_none(),
             },
-            patches,
+            overlay: Image {
+                width: inpainted.width() as u16,
+                height: inpainted.height() as u16,
+                data: d,
+                raw: format.is_none(),
+            },
+
+            blocks,
         }
     }
 
     pub fn get_image(&self) -> RawImage {
         (&self.img).into()
+    }
+
+    pub fn get_overlay(&self) -> RawImage {
+        (&self.overlay).into()
     }
 }
 
@@ -205,28 +239,5 @@ impl Image {
             data,
             raw,
         }
-    }
-}
-pub struct Obb {
-    x: usize,
-    y: usize,
-    w: usize,
-    h: usize,
-    rotation: u16,
-}
-pub struct Point {
-    x: usize,
-    y: usize,
-}
-
-pub struct Patch {
-    pub info: TextBlock,
-    pub pos: (usize, usize),
-    bg: Image,
-}
-
-impl Patch {
-    pub fn get_image(&self) -> RawImage {
-        (&self.bg).into()
     }
 }
