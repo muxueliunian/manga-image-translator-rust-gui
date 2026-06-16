@@ -1,7 +1,7 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-#[derive(Serialize, Deserialize, Default, JsonSchema)]
+#[derive(Serialize, Deserialize, Default, Clone, JsonSchema)]
 #[serde(default)]
 pub struct RenderSettings {
     pub renderer: Renderer,
@@ -16,7 +16,7 @@ pub enum TextDirection {
     Vertical,
 }
 
-#[derive(Serialize, Deserialize, Default, JsonSchema, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Default, Clone, Copy, JsonSchema, PartialEq, Eq)]
 pub enum Renderer {
     #[default]
     Png,

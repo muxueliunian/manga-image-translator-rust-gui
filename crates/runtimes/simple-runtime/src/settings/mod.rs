@@ -18,7 +18,7 @@ pub use crate::settings::{
     upscaler::Upscaler, upscaler::UpscalerSettings,
 };
 
-#[derive(Serialize, Deserialize, Default, JsonSchema)]
+#[derive(Serialize, Deserialize, Default, Clone, JsonSchema)]
 #[serde(default)]
 /// Settings for the simple runtime
 pub struct Settings {

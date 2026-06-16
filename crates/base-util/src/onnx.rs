@@ -1,4 +1,6 @@
-use log::{info, Level};
+use std::sync::atomic::{AtomicBool, Ordering};
+
+use log::{info, warn, Level};
 use ndarray::{Array, Array2, IxDyn};
 use ort::{
     execution_providers::{
@@ -18,6 +20,12 @@ pub enum Providers {
     DirectML,
     CoreML,
     RocM,
+}
+
+static REQUIRE_CUDA_OVERRIDE: AtomicBool = AtomicBool::new(false);
+
+pub fn set_require_cuda_override(require_cuda: bool) {
+    REQUIRE_CUDA_OVERRIDE.store(require_cuda, Ordering::Relaxed);
 }
 
 pub fn all_providers() -> Vec<Providers> {
@@ -44,13 +52,18 @@ pub fn gpu_providers() -> Vec<Providers> {
 }
 
 pub fn new_session(providers: &[Providers]) -> anyhow::Result<SessionBuilder> {
-    Ok(new_session_(Session::builder()?, providers)?)
+    new_session_(Session::builder()?, providers)
 }
 
 pub fn new_session_(
     session_builder: SessionBuilder,
     providers: &[Providers],
-) -> Result<SessionBuilder, ort::Error> {
+) -> anyhow::Result<SessionBuilder> {
+    let require_cuda = require_cuda();
+    info!(
+        "Creating ONNX Runtime session: require_cuda={require_cuda}, provider_order={providers:?}"
+    );
+
     let session_builder = session_builder
         .with_logger(Box::new(
             |level: ort::logging::LogLevel,
@@ -95,16 +108,63 @@ pub fn new_session_(
             Providers::RocM => ROCmExecutionProvider::default().with_device_id(0).build(),
         }
         .error_on_failure();
-        if let Ok(session_builder) = session_builder
+        match session_builder
             .clone()
             .with_execution_providers(vec![provider])
         {
-            info!("Execution provider {:?} in use", provider_);
-            return Ok(session_builder);
+            Ok(session_builder) => {
+                info!("Execution provider {:?} in use", provider_);
+                return Ok(session_builder);
+            }
+            Err(err) => {
+                warn!("Execution provider {:?} unavailable: {err}", provider_);
+                if require_cuda && matches!(provider_, Providers::CUDA) {
+                    anyhow::bail!(
+                        "MIT_REQUIRE_CUDA=1 but the CUDA execution provider is unavailable. {} Original error: {err}",
+                        cuda_error_hint(&err.to_string())
+                    );
+                }
+            }
         }
+    }
+    if require_cuda {
+        anyhow::bail!("MIT_REQUIRE_CUDA=1 but no CUDA execution provider was available");
     }
     info!("Execution provider CPU in use");
     Ok(session_builder)
+}
+
+fn require_cuda() -> bool {
+    if REQUIRE_CUDA_OVERRIDE.load(Ordering::Relaxed) {
+        return true;
+    }
+    std::env::var("MIT_REQUIRE_CUDA")
+        .map(|value| {
+            matches!(
+                value.trim().to_ascii_lowercase().as_str(),
+                "1" | "true" | "yes" | "on"
+            )
+        })
+        .unwrap_or(false)
+}
+
+fn cuda_error_hint(error: &str) -> String {
+    let lower = error.to_ascii_lowercase();
+    let known_dlls = [
+        "cublaslt64_12.dll",
+        "cublas64_12.dll",
+        "cufft64_11.dll",
+        "cudart64_12.dll",
+        "cudnn64_9.dll",
+    ];
+    let missing = known_dlls.iter().copied().find(|dll| lower.contains(dll));
+
+    match missing {
+        Some(dll) => format!(
+            "Missing CUDA runtime dependency: {dll}. Install NVIDIA CUDA Toolkit 12.x or rebuild the portable package with -CudaRuntimeDir pointing at the CUDA bin directory."
+        ),
+        None => "Check NVIDIA driver, CUDA/cuDNN runtime DLLs, and ONNX Runtime CUDA provider compatibility.".to_owned(),
+    }
 }
 
 pub fn dyn_to_2d(arr: Array<f32, IxDyn>) -> Option<Array2<f32>> {

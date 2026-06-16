@@ -33,7 +33,7 @@ pub enum Translator {
     Youdao,
 }
 
-#[derive(Serialize, Deserialize, JsonSchema)]
+#[derive(Serialize, Deserialize, Clone, JsonSchema)]
 #[serde(default)]
 pub struct TranslatorSettings {
     pub target: Target,
@@ -140,7 +140,7 @@ impl Default for OpenAICompatibleSettings {
     }
 }
 
-#[derive(Serialize, Deserialize, JsonSchema)]
+#[derive(Serialize, Deserialize, Clone, JsonSchema)]
 #[serde(untagged)]
 pub enum Target {
     Single(SingleOrMultiple),
@@ -197,7 +197,7 @@ impl Target {
     }
 }
 
-#[derive(Hash, Eq, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Hash, Eq, PartialEq, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(untagged)]
 pub enum SingleOrMultiple {
     Single(Translation),
@@ -213,7 +213,7 @@ impl SingleOrMultiple {
     }
 }
 
-#[derive(Hash, Eq, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Hash, Eq, PartialEq, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct Translation {
     pub translator: Translator,
     pub target: LanguageWrapper,

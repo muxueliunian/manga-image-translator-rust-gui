@@ -14,7 +14,7 @@ pub enum Detector {
     Ctd,
 }
 
-#[derive(Serialize, Deserialize, Default, JsonSchema)]
+#[derive(Serialize, Deserialize, Default, Clone, JsonSchema)]
 #[serde(default)]
 pub struct DetectorSettings {
     /// Text detector used for creating a text mask from an image, DO NOT use craft for manga, it\'s not designed for it

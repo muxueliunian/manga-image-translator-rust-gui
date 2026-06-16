@@ -12,7 +12,7 @@ pub enum Inpainter {
     LamaMpe,
 }
 
-#[derive(Serialize, Deserialize, JsonSchema)]
+#[derive(Serialize, Deserialize, Clone, JsonSchema)]
 #[serde(default)]
 pub struct InpainterSettings {
     /// Inpainting model to use
@@ -24,7 +24,7 @@ pub struct InpainterSettings {
     /// this is not the mask that is given to the inpainter, but what part of the inpainted image should be extracted(overlayed on the orignal image)
     pub mask: Mask,
 }
-#[derive(Serialize, Deserialize, JsonSchema, Default)]
+#[derive(Serialize, Deserialize, Clone, JsonSchema, Default)]
 pub enum Mask {
     /// The detected mask needs to be refined to remove artifacts when inpainting. Its alsmost a perfect match to the actual letters, but does contain some noise
     Mask,

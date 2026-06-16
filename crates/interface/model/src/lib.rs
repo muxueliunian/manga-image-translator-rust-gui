@@ -1,7 +1,8 @@
-use std::{collections::HashMap, ops::Deref, path::PathBuf, sync::Arc};
+use std::{collections::HashMap, ops::Deref, path::PathBuf, sync::Arc, time::Instant};
 
 use crate::db::ModelDb;
 use anyhow::anyhow;
+use log::info;
 use tokio::sync::{RwLock, RwLockReadGuard};
 
 pub mod db;
@@ -26,7 +27,7 @@ impl<'a, T> Deref for ModelRead<'a, T> {
 }
 
 #[async_trait::async_trait]
-pub trait ModelLoad {
+pub trait ModelLoad: Model {
     type T;
     async fn loaded(&self) -> bool;
     async fn get_model(&self) -> Option<ModelRead<'_, Self::T>>;
@@ -34,7 +35,16 @@ pub trait ModelLoad {
         if self.loaded().await {
             return Ok(self.get_model().await.expect("Checked before"));
         }
-        self.reload().await
+        let started = Instant::now();
+        info!("Loading model {}/{}", self.kind(), self.name());
+        let model = self.reload().await?;
+        info!(
+            "Model {}/{} loaded in {:.2}s",
+            self.kind(),
+            self.name(),
+            started.elapsed().as_secs_f64()
+        );
+        Ok(model)
     }
     async fn reload(&self) -> anyhow::Result<ModelRead<'_, Self::T>>;
 }
