@@ -1,4 +1,7 @@
-use ort::execution_providers::{CUDAExecutionProvider, ExecutionProvider};
+use ort::{
+    execution_providers::{CUDAExecutionProvider, ExecutionProvider},
+    session::Session,
+};
 use reqwest::Client;
 use semver::Version;
 use serde::Deserialize;
@@ -9,9 +12,17 @@ struct Release {
     html_url: String,
 }
 
-pub fn check_cuda() -> bool {
+pub fn check_cuda_error() -> Option<String> {
     let cuda = CUDAExecutionProvider::default();
-    cuda.is_available().unwrap_or_default()
+    if !cuda.is_available().unwrap_or_default() {
+        return Some("CUDA execution provider is not reported as available.".to_owned());
+    }
+
+    let provider = cuda.with_device_id(0).build().error_on_failure();
+    Session::builder()
+        .and_then(|builder| builder.with_execution_providers(vec![provider]))
+        .err()
+        .map(|err| err.to_string())
 }
 
 pub async fn check_crate_version(repo: &str) -> Result<bool, Box<dyn std::error::Error>> {

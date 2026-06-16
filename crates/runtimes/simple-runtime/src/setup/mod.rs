@@ -27,6 +27,7 @@ pub struct Models {
     ocrs: OCRs,
     translators: Translators,
     inpainters: Inpainters,
+    cuda: bool,
     pub lang_detector: LangIdDetector,
 }
 
@@ -40,8 +41,11 @@ impl Models {
     pub fn get_ocr(&self, ocr: OCR) -> &OcrType {
         self.ocrs.get(ocr)
     }
-    pub fn get_translator(&mut self, translator: Translator) -> &mut TranslatorType {
-        self.translators.get(translator)
+    pub async fn get_translator(
+        &mut self,
+        translator: Translator,
+    ) -> anyhow::Result<&mut TranslatorType> {
+        self.translators.get(translator, self.cuda).await
     }
     pub fn get_inpainter(&self, inpainter: Inpainter) -> &InpainterType {
         self.inpainters.get(inpainter)
@@ -54,6 +58,7 @@ impl Models {
     ) -> Self {
         //TODO: providers based on input
         Models {
+            cuda,
             lang_detector: LangIdDetector::new().unwrap(),
             detectors: Detectors::new(),
             upscalers: Upscalers::new(max_batch_size_upscaler, fast),

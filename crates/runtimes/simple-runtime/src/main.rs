@@ -1,8 +1,9 @@
 use std::{
     fs::{create_dir_all, File},
     io::Write,
-    path::PathBuf,
+    path::{Path, PathBuf},
     sync::Arc,
+    time::Instant,
 };
 
 use clap::Parser as _;
@@ -17,17 +18,20 @@ use tracing_subscriber::EnvFilter;
 use walkdir::WalkDir;
 
 use crate::{
+    perf::{ensure_cuda_policy, format_duration, JobLogger, RuntimeDiagnostics, StageTimer},
     settings::{Renderer, Settings, TextDirection},
     setup::Models,
-    update::{check_crate_version, check_cuda},
+    update::{check_crate_version, check_cuda_error},
 };
 
 mod api;
 mod cache;
 pub mod cli;
 mod debug;
+mod diagnostics;
 mod dict;
 mod execute;
+mod perf;
 pub mod settings;
 pub mod setup;
 mod ui;
@@ -101,6 +105,10 @@ pub fn prepare_renderer_assets(path: &std::path::Path, renderer: &Renderer) -> a
     Ok(())
 }
 
+fn logs_dir() -> &'static Path {
+    Path::new("logs")
+}
+
 #[tokio::main]
 async fn main() {
     let cli = cli::Cli::parse();
@@ -110,7 +118,7 @@ async fn main() {
         _ => ("warn", "ort=error"),
     };
 
-    let base_filter = EnvFilter::new(level);
+    let base_filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new(level));
     let filter = base_filter.add_directive(ort_level.parse().unwrap());
 
     tracing_subscriber::fmt()
@@ -119,15 +127,30 @@ async fn main() {
         .with_env_filter(filter)
         .init();
 
+    let cuda_error = check_cuda_error();
+    let cuda = cuda_error.is_none();
+    let diagnostics = RuntimeDiagnostics::collect_with_error(cuda, cuda_error.clone());
+    info!(
+        "Runtime diagnostics: cuda_feature={}, cuda_available={}, require_cuda={}, provider_status={}, cuda_error={}",
+        diagnostics.cuda_feature,
+        diagnostics.cuda_available,
+        diagnostics.require_cuda,
+        diagnostics.provider_status,
+        diagnostics.cuda_error.as_deref().unwrap_or("")
+    );
+    if let Err(err) = ensure_cuda_policy(cuda) {
+        error!("{err}");
+        return;
+    }
+    if !cuda && cfg!(all(target_arch = "x86_64", not(target_os = "macos"))) {
+        warn!("CUDA is not available")
+    }
+
     if matches!(cli.command, cli::Commands::UiWebview) {
         webview_ui::run().expect("Failed to run WebView UI");
         return;
     }
 
-    let cuda = check_cuda();
-    if !cuda && cfg!(all(target_arch = "x86_64", not(target_os = "macos"))) {
-        warn!("CUDA is not available")
-    }
     let _ = check_crate_version("frederik-uni/manga-image-translator-rust").await;
 
     let mut models = Models::new(
@@ -144,6 +167,21 @@ async fn main() {
             config,
             overwrite,
         } => {
+            let job_timer = Instant::now();
+            let job_logger = JobLogger::create(logs_dir()).ok();
+            if let Some(logger) = &job_logger {
+                logger.log(
+                    "info",
+                    format!(
+                        "cli job started: cuda_feature={}, cuda_available={}, require_cuda={}, provider_status={}",
+                        diagnostics.cuda_feature,
+                        diagnostics.cuda_available,
+                        diagnostics.require_cuda,
+                        diagnostics.provider_status
+                    ),
+                );
+                info!("Writing performance log to {}", logger.path().display());
+            }
             let mut input_list = WalkDir::new(&input)
                 .into_iter()
                 .filter_map(|v| v.ok())
@@ -206,7 +244,16 @@ async fn main() {
                 } else {
                     None
                 };
-                let exp = models.execute(img, &settings, debug_path).await.unwrap();
+                let exp = models
+                    .execute_with_progress_and_logger(
+                        img,
+                        &settings,
+                        debug_path,
+                        None,
+                        job_logger.as_ref(),
+                    )
+                    .await
+                    .unwrap();
                 let exp = match exp {
                     Some(v) => v,
                     None => {
@@ -217,9 +264,22 @@ async fn main() {
                 output.set_extension(out_ext);
                 prepare_renderer_assets(&output, &settings.render.renderer)
                     .expect("Failed to prepare render output");
+                let render_timer = StageTimer::start("render", job_logger.as_ref());
                 let data = render_export_bytes_with_settings(exp, &settings)
                     .expect("Failed to render output");
+                render_timer.finish();
+                let write_timer = StageTimer::start("write", job_logger.as_ref());
                 File::create(output).unwrap().write_all(&data).unwrap();
+                write_timer.finish();
+            }
+            if let Some(logger) = &job_logger {
+                logger.log(
+                    "info",
+                    format!(
+                        "cli job finished in {}",
+                        format_duration(job_timer.elapsed())
+                    ),
+                );
             }
         }
         cli::Commands::Api { host, port } => api::main(&host, port, Arc::new(Mutex::new(models)))

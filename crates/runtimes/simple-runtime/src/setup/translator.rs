@@ -1,7 +1,6 @@
 use std::{collections::HashMap, env};
 
 use interface_translator::{AsyncTranslator, ComputeType};
-use strum::IntoEnumIterator;
 
 use crate::settings::Translator;
 pub type TranslatorType = Box<dyn AsyncTranslator + Send + Sync>;
@@ -19,7 +18,7 @@ async fn create_papago() -> Option<TranslatorType> {
 use interface_translator::{
     BaiduTranslator, CaiyunTranslator, DeeplTranslator, GoogleTranslator, YoudaoTranslator,
 };
-use log::warn;
+use log::{info, warn};
 
 pub fn create_baidu_translator() -> Option<TranslatorType> {
     let app_id = env::var("BAIDU_APP_ID").ok();
@@ -95,94 +94,98 @@ pub fn create_youdao_translator() -> Option<TranslatorType> {
     }
 }
 impl Translators {
-    pub fn get(&mut self, translator: Translator) -> &mut TranslatorType {
-        self.0
-            .get_mut(&translator)
-            .expect("Translator not available. Have you set the environment variables?")
-    }
-    pub async fn new(cuda: bool) -> Self {
-        let mut items = HashMap::new();
-
-        for key in Translator::iter() {
-            let translator = match key {
-                Translator::JParaCrawlSmall => {
-                    Some(Box::new(interface_translator::JParaCrawlTranslator::new(
-                        false,
-                        cuda,
-                        ComputeType::DEFAULT,
-                        interface_translator::JParaCrawlSize::Small,
-                    )) as TranslatorType)
-                }
-                Translator::JParaCrawlBase => {
-                    Some(Box::new(interface_translator::JParaCrawlTranslator::new(
-                        false,
-                        cuda,
-                        ComputeType::DEFAULT,
-                        interface_translator::JParaCrawlSize::Base,
-                    )) as TranslatorType)
-                }
-                Translator::JParaCrawlLarge => {
-                    Some(Box::new(interface_translator::JParaCrawlTranslator::new(
-                        false,
-                        cuda,
-                        ComputeType::DEFAULT,
-                        interface_translator::JParaCrawlSize::Large,
-                    )) as TranslatorType)
-                }
-                Translator::Baidu => create_baidu_translator(),
-                Translator::Caiyun => create_caiyun_translator(),
-                Translator::Deepl => create_deepl_translator(),
-                Translator::Google => create_google_translator(),
-                Translator::M2M100Small => {
-                    Some(Box::new(interface_translator::M2M100Translator::new(
-                        cuda,
-                        ComputeType::DEFAULT,
-                        interface_translator::M2M100Size::Small,
-                    )) as TranslatorType)
-                }
-                Translator::M2M100Large => {
-                    Some(Box::new(interface_translator::M2M100Translator::new(
-                        cuda,
-                        ComputeType::DEFAULT,
-                        interface_translator::M2M100Size::Large,
-                    )) as TranslatorType)
-                }
-                Translator::MyMemory => {
-                    Some(Box::new(interface_translator::MyMemoryTranslator::new()) as TranslatorType)
-                }
-                Translator::NLLBSmallDistilled => {
-                    Some(Box::new(interface_translator::NLLBTranslator::new(
-                        cuda,
-                        ComputeType::DEFAULT,
-                        interface_translator::NLLBSize::SmallDistilled,
-                    )) as TranslatorType)
-                }
-                Translator::NLLBBase => Some(Box::new(interface_translator::NLLBTranslator::new(
-                    cuda,
-                    ComputeType::DEFAULT,
-                    interface_translator::NLLBSize::Base,
-                )) as TranslatorType),
-                Translator::NLLBLarge => Some(Box::new(interface_translator::NLLBTranslator::new(
-                    cuda,
-                    ComputeType::DEFAULT,
-                    interface_translator::NLLBSize::Large,
-                )) as TranslatorType),
-                Translator::Papago => create_papago().await,
-                Translator::OpenAICompatible => None,
-                Translator::Sugoi => Some(Box::new(interface_translator::SugoiTranslator::new(
-                    cuda,
-                    ComputeType::DEFAULT,
-                )) as TranslatorType),
-                Translator::Youdao => create_youdao_translator(),
-                Translator::MBart => Some(Box::new(interface_translator::MBart50Translator::new(
-                    cuda,
-                    ComputeType::DEFAULT,
-                )) as TranslatorType),
-            };
-            if let Some(translator) = translator {
-                items.insert(key, translator);
+    pub async fn get(
+        &mut self,
+        translator: Translator,
+        cuda: bool,
+    ) -> anyhow::Result<&mut TranslatorType> {
+        if !self.0.contains_key(&translator) {
+            info!("Lazy initializing translator: {translator:?}");
+            if let Some(item) = create_translator(translator, cuda).await {
+                self.0.insert(translator, item);
             }
         }
-        Translators(items)
+
+        self.0.get_mut(&translator).ok_or_else(|| {
+            anyhow::anyhow!(
+                "Translator {translator:?} is not available. Check environment variables or translator settings."
+            )
+        })
+    }
+
+    pub async fn new(_cuda: bool) -> Self {
+        Translators(HashMap::new())
+    }
+}
+
+async fn create_translator(key: Translator, cuda: bool) -> Option<TranslatorType> {
+    match key {
+        Translator::JParaCrawlSmall => {
+            Some(Box::new(interface_translator::JParaCrawlTranslator::new(
+                false,
+                cuda,
+                ComputeType::DEFAULT,
+                interface_translator::JParaCrawlSize::Small,
+            )) as TranslatorType)
+        }
+        Translator::JParaCrawlBase => {
+            Some(Box::new(interface_translator::JParaCrawlTranslator::new(
+                false,
+                cuda,
+                ComputeType::DEFAULT,
+                interface_translator::JParaCrawlSize::Base,
+            )) as TranslatorType)
+        }
+        Translator::JParaCrawlLarge => {
+            Some(Box::new(interface_translator::JParaCrawlTranslator::new(
+                false,
+                cuda,
+                ComputeType::DEFAULT,
+                interface_translator::JParaCrawlSize::Large,
+            )) as TranslatorType)
+        }
+        Translator::Baidu => create_baidu_translator(),
+        Translator::Caiyun => create_caiyun_translator(),
+        Translator::Deepl => create_deepl_translator(),
+        Translator::Google => create_google_translator(),
+        Translator::M2M100Small => Some(Box::new(interface_translator::M2M100Translator::new(
+            cuda,
+            ComputeType::DEFAULT,
+            interface_translator::M2M100Size::Small,
+        )) as TranslatorType),
+        Translator::M2M100Large => Some(Box::new(interface_translator::M2M100Translator::new(
+            cuda,
+            ComputeType::DEFAULT,
+            interface_translator::M2M100Size::Large,
+        )) as TranslatorType),
+        Translator::MyMemory => {
+            Some(Box::new(interface_translator::MyMemoryTranslator::new()) as TranslatorType)
+        }
+        Translator::NLLBSmallDistilled => Some(Box::new(interface_translator::NLLBTranslator::new(
+            cuda,
+            ComputeType::DEFAULT,
+            interface_translator::NLLBSize::SmallDistilled,
+        )) as TranslatorType),
+        Translator::NLLBBase => Some(Box::new(interface_translator::NLLBTranslator::new(
+            cuda,
+            ComputeType::DEFAULT,
+            interface_translator::NLLBSize::Base,
+        )) as TranslatorType),
+        Translator::NLLBLarge => Some(Box::new(interface_translator::NLLBTranslator::new(
+            cuda,
+            ComputeType::DEFAULT,
+            interface_translator::NLLBSize::Large,
+        )) as TranslatorType),
+        Translator::Papago => create_papago().await,
+        Translator::OpenAICompatible => None,
+        Translator::Sugoi => Some(Box::new(interface_translator::SugoiTranslator::new(
+            cuda,
+            ComputeType::DEFAULT,
+        )) as TranslatorType),
+        Translator::Youdao => create_youdao_translator(),
+        Translator::MBart => Some(Box::new(interface_translator::MBart50Translator::new(
+            cuda,
+            ComputeType::DEFAULT,
+        )) as TranslatorType),
     }
 }

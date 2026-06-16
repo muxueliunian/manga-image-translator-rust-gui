@@ -14,7 +14,7 @@ pub enum OCR {
     Ocr48px,
 }
 
-#[derive(Serialize, Deserialize, Default, JsonSchema)]
+#[derive(Serialize, Deserialize, Default, Clone, JsonSchema)]
 #[serde(default)]
 pub struct OCRSettings {
     /// Optical character recognition (OCR) model to use
@@ -27,7 +27,7 @@ pub struct OCRSettings {
     pub post_processing: PostProcessingSettings,
 }
 
-#[derive(Serialize, Deserialize, JsonSchema)]
+#[derive(Serialize, Deserialize, Clone, JsonSchema)]
 #[serde(default)]
 pub struct PostProcessingSettings {
     /// Minimum text length of a text region

@@ -1,4 +1,4 @@
-use std::time::Duration;
+use std::{path::Path, time::Duration};
 
 use anyhow::{anyhow, bail};
 use interface_translator::Detector;
@@ -10,6 +10,8 @@ use serde::{Deserialize, Serialize};
 use textline_merge::TextBlock;
 
 use crate::{
+    diagnostics,
+    perf::JobLogger,
     settings::{OpenAICompatibleSettings, Target, Translation, Translator, TranslatorSettings},
     setup::Models,
 };
@@ -19,10 +21,12 @@ impl Models {
         &mut self,
         textblocks: Vec<TextBlock>,
         config: &TranslatorSettings,
+        debug_path: Option<&Path>,
+        logger: Option<&JobLogger>,
     ) -> anyhow::Result<Vec<TextBlock>> {
         match &config.target {
             Target::Single(items) => {
-                self.run_translator_list(textblocks, items.as_slice(), config)
+                self.run_translator_list(textblocks, items.as_slice(), config, debug_path, logger)
                     .await
             }
             Target::Selective(hash_map) => todo!("selective not implemented yet"),
@@ -34,6 +38,8 @@ impl Models {
         mut textblocks: Vec<TextBlock>,
         translators: &[Translation],
         config: &TranslatorSettings,
+        debug_path: Option<&Path>,
+        logger: Option<&JobLogger>,
     ) -> anyhow::Result<Vec<TextBlock>> {
         assert!(!textblocks.is_empty());
         let mut textblocks_use = textblocks
@@ -54,8 +60,10 @@ impl Models {
 
         let mut texts = TranslationListOutput { text: texts, lang };
 
-        for translator in translators {
-            let out = self.run_translator_item(texts, translator, config).await?;
+        for (index, translator) in translators.iter().enumerate() {
+            let out = self
+                .run_translator_item(texts, translator, config, debug_path, logger, index + 1)
+                .await?;
             let lang_str = out.lang.map(|v| v.to_name().unwrap()).unwrap_or("unknown");
             for (i, item) in out.text.iter().enumerate() {
                 textblocks_use[i]
@@ -80,30 +88,70 @@ impl Models {
         input: TranslationListOutput,
         translator_info: &Translation,
         config: &TranslatorSettings,
+        debug_path: Option<&Path>,
+        logger: Option<&JobLogger>,
+        step: usize,
     ) -> anyhow::Result<TranslationListOutput> {
         info!("Run Translator: {:?}", translator_info.translator);
         let to = translator_info.target.0;
         // TODO: set fallback language in config
         let from = input.lang.ok_or(anyhow!("Failed to detect language"))?;
+        let translator_name = format!("{:?}", translator_info.translator);
+        let from_name = from.to_name().unwrap_or("unknown");
+        let to_name = to.to_name().unwrap_or("unknown");
+        diagnostics::record_translator_request(
+            logger,
+            debug_path,
+            step,
+            &translator_name,
+            from_name,
+            to_name,
+            &input.text,
+        )?;
+        let started = std::time::Instant::now();
 
-        let text = if translator_info.translator == Translator::OpenAICompatible {
-            translate_openai_compatible(
-                &input.text,
-                from.to_name().unwrap(),
-                to.to_name().unwrap(),
-                &config.openai_compatible,
-            )
-            .await?
+        let text_result = if translator_info.translator == Translator::OpenAICompatible {
+            translate_openai_compatible(&input.text, from_name, to_name, &config.openai_compatible)
+                .await
         } else {
-            let translator = self.get_translator(translator_info.translator);
+            let translator = self.get_translator(translator_info.translator).await?;
             translator
                 .translate_vec(&input.text, None, Some(from), &to)
-                .await?
-                .text
+                .await
+                .map(|value| value.text)
+        };
+        let text = match text_result {
+            Ok(text) => text,
+            Err(err) => {
+                diagnostics::record_translator_error(
+                    logger,
+                    debug_path,
+                    step,
+                    &translator_name,
+                    from_name,
+                    to_name,
+                    &input.text,
+                    &err.to_string(),
+                    started.elapsed(),
+                )?;
+                return Err(err);
+            }
         };
 
         let d_str = text.join(" ");
         let lang = self.lang_detector.detect_language(&d_str);
+        diagnostics::record_translator_response(
+            logger,
+            debug_path,
+            step,
+            &translator_name,
+            from_name,
+            to_name,
+            &input.text,
+            &text,
+            lang.and_then(|value| value.to_name()),
+            started.elapsed(),
+        )?;
 
         Ok(TranslationListOutput { text, lang })
     }

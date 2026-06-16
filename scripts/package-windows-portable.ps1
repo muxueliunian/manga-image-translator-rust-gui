@@ -1,6 +1,8 @@
 param(
     [switch]$Cuda,
-    [switch]$NoZip
+    [switch]$NoZip,
+    [switch]$DownloadCudaRuntime,
+    [string[]]$CudaRuntimeDir = @()
 )
 
 $ErrorActionPreference = "Stop"
@@ -18,6 +20,7 @@ $PortableDir = Join-Path $DistDir $PortableName
 $BinaryName = "simple-runtime.exe"
 $BinaryPath = Join-Path $ReleaseDir $BinaryName
 $ToolsRoot = Resolve-Path (Join-Path $RepoRoot "..\tools") -ErrorAction SilentlyContinue
+$CudaRuntimeCacheDir = Join-Path (Join-Path $RepoRoot "..\tools") "cuda-runtime-cu12"
 
 function Write-Step {
     param([string]$Message)
@@ -95,6 +98,24 @@ function Add-UniquePath {
     }
 }
 
+function Add-CudaRuntimeSearchRoot {
+    param(
+        [System.Collections.Generic.List[string]]$List,
+        [string]$Path
+    )
+
+    Add-UniquePath $List $Path
+    if ([string]::IsNullOrWhiteSpace($Path)) {
+        return
+    }
+
+    Add-UniquePath $List (Join-Path $Path "bin")
+    if (Test-Path -LiteralPath $Path -PathType Container) {
+        Get-ChildItem -LiteralPath $Path -Directory -Recurse -Filter "bin" -ErrorAction SilentlyContinue |
+            ForEach-Object { Add-UniquePath $List $_.FullName }
+    }
+}
+
 function Get-OpenCvSearchDirs {
     $dirs = [System.Collections.Generic.List[string]]::new()
 
@@ -155,6 +176,145 @@ function Copy-OpenCvDlls {
     return $copied
 }
 
+function Get-CudaRuntimeSearchDirs {
+    $dirs = [System.Collections.Generic.List[string]]::new()
+
+    foreach ($dir in $CudaRuntimeDir) {
+        Add-CudaRuntimeSearchRoot $dirs $dir
+    }
+
+    Add-CudaRuntimeSearchRoot $dirs $CudaRuntimeCacheDir
+    Add-UniquePath $dirs $ReleaseDir
+    Add-CudaRuntimeSearchRoot $dirs $env:CUDA_PATH
+    if ($env:CUDA_PATH) {
+        Add-UniquePath $dirs (Join-Path $env:CUDA_PATH "bin")
+    }
+
+    Get-ChildItem Env: -ErrorAction SilentlyContinue |
+        Where-Object { $_.Name -like "CUDA_PATH_V12*" -and $_.Value } |
+        ForEach-Object {
+            Add-CudaRuntimeSearchRoot $dirs $_.Value
+        }
+
+    foreach ($entry in ($env:Path -split ";")) {
+        if ($entry -match "CUDA|NVIDIA GPU Computing Toolkit|cudnn") {
+            Add-UniquePath $dirs $entry
+        }
+    }
+
+    $toolkitRoot = "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA"
+    if (Test-Path -LiteralPath $toolkitRoot -PathType Container) {
+        Get-ChildItem -LiteralPath $toolkitRoot -Directory -ErrorAction SilentlyContinue |
+            Where-Object { $_.Name -like "v12*" } |
+            Sort-Object Name -Descending |
+            ForEach-Object {
+                Add-CudaRuntimeSearchRoot $dirs $_.FullName
+            }
+    }
+
+    return $dirs
+}
+
+function Copy-CudaRuntimeDlls {
+    param([string]$Destination)
+
+    $requiredDlls = @(
+        "cublasLt64_12.dll",
+        "cublas64_12.dll",
+        "cufft64_11.dll",
+        "cudart64_12.dll",
+        "cudnn64_9.dll"
+    )
+    $optionalDlls = @(
+        "cudnn_adv64_9.dll",
+        "cudnn_cnn64_9.dll",
+        "cudnn_engines_precompiled64_9.dll",
+        "cudnn_engines_runtime_compiled64_9.dll",
+        "cudnn_graph64_9.dll",
+        "cudnn_heuristic64_9.dll",
+        "cudnn_ops64_9.dll",
+        "nvrtc64_*.dll",
+        "nvrtc-builtins64_*.dll",
+        "nvJitLink64_*.dll"
+    )
+
+    $searchDirs = Get-CudaRuntimeSearchDirs
+    $copied = 0
+    $missing = [System.Collections.Generic.List[string]]::new()
+
+    foreach ($dllName in $requiredDlls) {
+        $source = $null
+        foreach ($dir in $searchDirs) {
+            $candidate = Join-Path $dir $dllName
+            if (Test-Path -LiteralPath $candidate -PathType Leaf) {
+                $source = $candidate
+                break
+            }
+        }
+
+        if ($source) {
+            Copy-Item -LiteralPath $source -Destination $Destination -Force
+            $copied++
+        } else {
+            [void]$missing.Add($dllName)
+        }
+    }
+
+    foreach ($pattern in $optionalDlls) {
+        foreach ($dir in $searchDirs) {
+            Get-ChildItem -LiteralPath $dir -Filter $pattern -File -ErrorAction SilentlyContinue |
+                Where-Object { -not $_.Name.StartsWith("._") } |
+                ForEach-Object {
+                    Copy-Item -LiteralPath $_.FullName -Destination $Destination -Force
+                    $copied++
+                }
+        }
+    }
+
+    if ($missing.Count -gt 0) {
+        $newline = [Environment]::NewLine
+        $searched = ($searchDirs | ForEach-Object { "  - $_" }) -join $newline
+        $missingText = ($missing | ForEach-Object { "  - $_" }) -join $newline
+        throw @"
+CUDA packaging was requested, but required CUDA runtime DLLs were not found.
+
+Missing:
+$missingText
+
+Install NVIDIA CUDA Toolkit 12.x, add its bin directory to PATH, set CUDA_PATH, or pass:
+  .\scripts\package-windows-portable.ps1 -Cuda -CudaRuntimeDir "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.x\bin"
+
+Searched:
+$searched
+"@
+    }
+
+    return $copied
+}
+
+function Install-CudaRuntimeFromPython {
+    Write-Step "Downloading CUDA runtime DLLs from NVIDIA PyPI wheels"
+    if (Test-Path -LiteralPath $CudaRuntimeCacheDir) {
+        $toolsDir = Resolve-Path (Join-Path $RepoRoot "..\tools") -ErrorAction SilentlyContinue
+        $resolvedCache = Resolve-Path -LiteralPath $CudaRuntimeCacheDir -ErrorAction SilentlyContinue
+        if ($toolsDir -and $resolvedCache -and -not $resolvedCache.Path.StartsWith($toolsDir.Path, [System.StringComparison]::OrdinalIgnoreCase)) {
+            throw "Refusing to remove CUDA runtime cache outside tools: $($resolvedCache.Path)"
+        }
+        Remove-Item -LiteralPath $CudaRuntimeCacheDir -Recurse -Force
+    }
+    New-Item -ItemType Directory -Path $CudaRuntimeCacheDir -Force | Out-Null
+    $packages = @(
+        "nvidia-cuda-runtime-cu12==12.4.127",
+        "nvidia-cublas-cu12==12.4.5.8",
+        "nvidia-cufft-cu12==11.2.1.3",
+        "nvidia-cudnn-cu12==9.11.0.98"
+    )
+    & python -m pip install --upgrade --target $CudaRuntimeCacheDir @packages
+    if ($LASTEXITCODE -ne 0) {
+        throw "Failed to download CUDA runtime packages with pip."
+    }
+}
+
 function Write-Launcher {
     param(
         [Parameter(Mandatory = $true)][string]$Path,
@@ -190,6 +350,16 @@ if (-not (Test-Path -LiteralPath $BinaryPath -PathType Leaf)) {
 
 Write-Step "Preparing portable directory"
 New-Item -ItemType Directory -Path $DistDir -Force | Out-Null
+if (Test-Path -LiteralPath $PortableDir) {
+    $resolvedDist = (Resolve-Path -LiteralPath $DistDir).Path
+    $resolvedPortable = (Resolve-Path -LiteralPath $PortableDir).Path
+    if (-not $resolvedPortable.StartsWith($resolvedDist, [System.StringComparison]::OrdinalIgnoreCase)) {
+        throw "Refusing to remove portable directory outside dist: $resolvedPortable"
+    }
+
+    Write-Step "Removing previous portable directory"
+    Remove-Item -LiteralPath $PortableDir -Recurse -Force
+}
 New-Item -ItemType Directory -Path $PortableDir -Force | Out-Null
 
 foreach ($dir in @("config", "models", "uploads", "results")) {
@@ -219,8 +389,15 @@ if (-not (Test-Path -LiteralPath $onnxDll)) {
 if ($Cuda) {
     $cudaDll = Join-Path $PortableDir "onnxruntime_providers_cuda.dll"
     if (-not (Test-Path -LiteralPath $cudaDll)) {
-        Write-Warning "CUDA packaging was requested, but onnxruntime_providers_cuda.dll was not found in target/release."
+        throw "CUDA packaging was requested, but onnxruntime_providers_cuda.dll was not found in target/release."
     }
+    if ($DownloadCudaRuntime) {
+        Install-CudaRuntimeFromPython
+    }
+    Write-Step "Collecting CUDA runtime DLLs"
+    $cudaRuntimeCopied = Copy-CudaRuntimeDlls -Destination $PortableDir
+} else {
+    $cudaRuntimeCopied = 0
 }
 
 Write-Step "Writing launchers"
@@ -229,7 +406,7 @@ Write-Launcher -Path (Join-Path $PortableDir "run-ui.bat") -Lines @(
 )
 
 Write-Launcher -Path (Join-Path $PortableDir "run-ui-debug.bat") -Lines @(
-    """%CD%\$BinaryName"" ui-webview",
+    """%CD%\$BinaryName"" -vv ui-webview",
     "pause"
 )
 
@@ -262,6 +439,7 @@ Contents:
 - simple-runtime.exe
 - Runtime DLLs copied from target\release
 - OpenCV DLLs copied from OPENCV_BIN_DIR, OPENCV_DIR, OPENCV_LINK_PATHS, PATH, or common C:\tools\opencv paths when found
+- CUDA runtime DLLs copied from CUDA_PATH, PATH, CUDA Toolkit 12.x, target\release, or -CudaRuntimeDir when this is a CUDA package
 - config, models, uploads, and results directories
 
 Launchers:
@@ -274,7 +452,10 @@ Launchers:
 
 Packaging notes:
 - If OpenCV DLLs were not copied, install OpenCV and set OPENCV_BIN_DIR to the folder containing opencv_world*.dll.
-- CUDA packages also need compatible NVIDIA CUDA/cuDNN and ONNX Runtime CUDA provider DLLs.
+- CUDA packages need compatible NVIDIA CUDA 12.x, cuDNN 9, and ONNX Runtime CUDA provider DLLs.
+- If packaging fails with missing cublasLt64_12.dll/cublas64_12.dll/cufft64_11.dll/cudart64_12.dll, install CUDA Toolkit 12.x or pass -CudaRuntimeDir to the script.
+- Use -DownloadCudaRuntime to fetch NVIDIA CUDA 12 runtime DLLs from PyPI into the local tools cache when CUDA Toolkit is not installed.
+- Set MIT_REQUIRE_CUDA=1 before starting a launcher, or enable Require CUDA in WebView, to fail fast when CUDA is unavailable.
 - All launchers cd to their own directory before starting simple-runtime.exe.
 "@
 Set-Content -LiteralPath (Join-Path $PortableDir "README-portable.txt") -Value $readme -Encoding ASCII
@@ -294,3 +475,6 @@ if (-not $NoZip) {
     Write-Host "Zip archive created: $(Join-Path $DistDir "$PortableName.zip")"
 }
 Write-Host "OpenCV DLLs copied: $openCvCopied"
+if ($Cuda) {
+    Write-Host "CUDA runtime DLLs copied: $cudaRuntimeCopied"
+}

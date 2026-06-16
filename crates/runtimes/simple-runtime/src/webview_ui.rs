@@ -5,6 +5,7 @@ use std::{
     process::Command,
     sync::Arc,
     thread,
+    time::Instant,
 };
 
 use anyhow::{anyhow, Result};
@@ -16,25 +17,32 @@ use tao::{
     event_loop::{ControlFlow, EventLoopBuilder},
     window::WindowBuilder,
 };
+use tokio::sync::{Mutex as AsyncMutex, Semaphore};
 use wry::http::{header::CONTENT_TYPE, Response};
 use wry::WebViewBuilder;
 
 use crate::{
+    perf::{
+        ensure_cuda_policy, format_duration, sample_nvidia_gpu_memory, JobLogger,
+        RuntimeDiagnostics, StageTimer,
+    },
     prepare_renderer_assets, render_export_bytes_with_settings,
     settings::{Renderer, Settings},
     setup::Models,
-    update::check_cuda,
+    update::check_cuda_error,
 };
 
 const INDEX_HTML: &str = include_str!("../webview/index.html");
 const STYLES_CSS: &str = include_str!("../webview/styles.css");
 const APP_JS: &str = include_str!("../webview/app.js");
+type ModelPool = Arc<AsyncMutex<Vec<Models>>>;
 
 #[derive(Debug)]
 enum UserEvent {
     Ipc(String),
     IpcResponse(IpcResponse<serde_json::Value>),
     Progress(ProgressEvent),
+    Log(LogEvent),
 }
 
 #[derive(Debug, Deserialize)]
@@ -78,6 +86,7 @@ struct AppReadyData {
     version: &'static str,
     platform: &'static str,
     backend: &'static str,
+    diagnostics: RuntimeDiagnostics,
 }
 
 #[derive(Debug, Serialize)]
@@ -104,11 +113,28 @@ struct ProgressEvent {
     message: String,
 }
 
+#[derive(Debug, Serialize)]
+struct LogEvent {
+    level: String,
+    message: String,
+}
+
 #[derive(Deserialize)]
 struct StartTranslationPayload {
     input_paths: Vec<PathBuf>,
     settings: Settings,
     output_format: String,
+    #[serde(default)]
+    require_cuda: bool,
+    #[serde(default = "default_max_parallel_images")]
+    max_parallel_images: usize,
+    #[serde(default = "default_max_parallel_gpu_jobs")]
+    max_parallel_gpu_jobs: usize,
+    /// When true, write the heavy per-image diagnostics dump (intermediate
+    /// images, masks, OCR patch crops, JSON). Off by default to keep runs fast
+    /// and stage timings clean; the lightweight job log is always written.
+    #[serde(default)]
+    debug: bool,
 }
 
 #[derive(Deserialize)]
@@ -132,11 +158,19 @@ struct ExportResultsData {
     exported: Vec<String>,
 }
 
+fn default_max_parallel_images() -> usize {
+    2
+}
+
+fn default_max_parallel_gpu_jobs() -> usize {
+    1
+}
+
 pub fn run() -> Result<()> {
     let event_loop = EventLoopBuilder::<UserEvent>::with_user_event().build();
     let proxy = event_loop.create_proxy();
     let ipc_proxy = proxy.clone();
-    let models: Arc<std::sync::Mutex<Option<Models>>> = Arc::new(std::sync::Mutex::new(None));
+    let models: ModelPool = Arc::new(AsyncMutex::new(Vec::new()));
     let window = WindowBuilder::new()
         .with_title("漫画图片翻译器")
         .with_inner_size(LogicalSize::new(1180.0, 780.0))
@@ -180,6 +214,9 @@ pub fn run() -> Result<()> {
             Event::UserEvent(UserEvent::Progress(progress)) => {
                 send_event(&webview, "progress", progress);
             }
+            Event::UserEvent(UserEvent::Log(log)) => {
+                send_event(&webview, "log", log);
+            }
             Event::WindowEvent {
                 event: WindowEvent::CloseRequested,
                 ..
@@ -200,7 +237,7 @@ fn build_html() -> String {
 fn handle_ipc_message(
     webview: &wry::WebView,
     proxy: &tao::event_loop::EventLoopProxy<UserEvent>,
-    models: Arc<std::sync::Mutex<Option<Models>>>,
+    models: ModelPool,
     message: &str,
 ) {
     let request = match serde_json::from_str::<IpcRequest>(message) {
@@ -243,11 +280,18 @@ fn handle_ipc_message(
 
 fn handle_ipc_request(request: &IpcRequest) -> Result<serde_json::Value> {
     match request.kind {
-        IpcKind::AppReady => to_value(AppReadyData {
-            version: env!("CARGO_PKG_VERSION"),
-            platform: std::env::consts::OS,
-            backend: "wry/webview2",
-        }),
+        IpcKind::AppReady => {
+            let cuda_error = check_cuda_error();
+            to_value(AppReadyData {
+                version: env!("CARGO_PKG_VERSION"),
+                platform: std::env::consts::OS,
+                backend: "wry/webview2",
+                diagnostics: RuntimeDiagnostics::collect_with_error(
+                    cuda_error.is_none(),
+                    cuda_error,
+                ),
+            })
+        }
         IpcKind::PickImages => {
             let files = FileDialog::new()
                 .add_filter("Images", &["png", "jpg", "jpeg", "webp"])
@@ -257,8 +301,11 @@ fn handle_ipc_request(request: &IpcRequest) -> Result<serde_json::Value> {
             to_value(paths_payload(files))
         }
         IpcKind::PickFolder => {
-            let folder = FileDialog::new().set_title("选择图片文件夹").pick_folder();
-            to_value(paths_payload(folder.into_iter().collect()))
+            let folders = FileDialog::new()
+                .set_title("选择图片文件夹")
+                .pick_folders()
+                .unwrap_or_default();
+            to_value(paths_payload(folders))
         }
         IpcKind::PickOutputDir => {
             let folder = FileDialog::new().set_title("选择输出目录").pick_folder();
@@ -294,7 +341,7 @@ fn handle_ipc_request(request: &IpcRequest) -> Result<serde_json::Value> {
 fn handle_start_translation(
     request: IpcRequest,
     proxy: tao::event_loop::EventLoopProxy<UserEvent>,
-    models: Arc<std::sync::Mutex<Option<Models>>>,
+    models: ModelPool,
 ) {
     thread::spawn(move || {
         let result = (|| -> Result<serde_json::Value> {
@@ -367,11 +414,86 @@ fn validate_translation_payload(payload: &StartTranslationPayload) -> Result<()>
 
 async fn run_translation_job(
     mut payload: StartTranslationPayload,
-    models: Arc<std::sync::Mutex<Option<Models>>>,
+    models: ModelPool,
     proxy: tao::event_loop::EventLoopProxy<UserEvent>,
 ) -> Result<StartTranslationResult> {
+    let job_timer = Instant::now();
+    let logger = JobLogger::create(logs_dir())?;
+    send_log(
+        &proxy,
+        "info",
+        format!("日志文件: {}", logger.path().display()),
+    );
+    logger.log("info", format!("log_file={}", logger.path().display()));
+
+    let cuda_error = check_cuda_error();
+    let cuda = cuda_error.is_none();
+    base_util::onnx::set_require_cuda_override(payload.require_cuda);
+    let diagnostics = RuntimeDiagnostics::collect_with_error(cuda, cuda_error.clone());
+    let effective_require_cuda = diagnostics.require_cuda || payload.require_cuda;
+    let effective_provider_status = if cuda {
+        "CUDA available".to_owned()
+    } else if effective_require_cuda {
+        "CUDA unavailable".to_owned()
+    } else {
+        diagnostics.provider_status.clone()
+    };
+    logger.log(
+        "info",
+        format!(
+            "runtime cuda_feature={}, cuda_available={}, require_cuda={}, gui_require_cuda={}, provider_status={}, cuda_error={}",
+            diagnostics.cuda_feature,
+            diagnostics.cuda_available,
+            diagnostics.require_cuda,
+            payload.require_cuda,
+            effective_provider_status,
+            diagnostics.cuda_error.as_deref().unwrap_or("")
+        ),
+    );
+    if cuda && !payload.require_cuda && !diagnostics.require_cuda {
+        logger.log(
+            "info",
+            "CUDA is available and will be preferred automatically. Force CUDA only disables CPU fallback.",
+        );
+    }
+    send_log(
+        &proxy,
+        if diagnostics.cuda_available {
+            "success"
+        } else {
+            "warn"
+        },
+        format!("推理状态: {effective_provider_status}"),
+    );
+    if payload.require_cuda && !cuda {
+        anyhow::bail!(
+            "GUI requested CUDA, but CUDA is not available. {}",
+            diagnostics
+                .cuda_error
+                .as_deref()
+                .unwrap_or("Check NVIDIA driver, CUDA/cuDNN, and ONNX Runtime CUDA provider DLLs.")
+        );
+    }
+    ensure_cuda_policy(cuda)?;
+
     let renderer = renderer_from_web_value(&payload.output_format)?;
     payload.settings.render.renderer = renderer;
+    payload.max_parallel_images = payload.max_parallel_images.clamp(1, 8);
+    payload.max_parallel_gpu_jobs = payload.max_parallel_gpu_jobs.clamp(1, 4);
+    logger.log(
+        "info",
+        format!(
+            "concurrency max_parallel_images={}, max_parallel_gpu_jobs={}",
+            payload.max_parallel_images, payload.max_parallel_gpu_jobs
+        ),
+    );
+    logger.log(
+        "info",
+        format!(
+            "debug diagnostics dump={} (timing log always on)",
+            payload.debug
+        ),
+    );
 
     let output_dir = internal_results_dir();
     create_dir_all(&output_dir)?;
@@ -382,10 +504,21 @@ async fn run_translation_job(
     }
     let total = inputs.len();
 
+    let requested_pool_size = payload
+        .max_parallel_images
+        .min(payload.max_parallel_gpu_jobs)
+        .max(1);
     send_progress(&proxy, 0, total, "正在准备模型");
-    ensure_models(&models).await?;
+    let timer = StageTimer::start("model-prepare", Some(&logger));
+    ensure_models(&models, &logger, requested_pool_size).await?;
+    timer.finish();
 
-    let mut outputs = Vec::with_capacity(inputs.len());
+    let output_slots: Arc<AsyncMutex<Vec<Option<TranslationOutput>>>> =
+        Arc::new(AsyncMutex::new((0..total).map(|_| None).collect()));
+    let image_semaphore = Arc::new(Semaphore::new(payload.max_parallel_images));
+    let gpu_semaphore = Arc::new(Semaphore::new(payload.max_parallel_gpu_jobs));
+    let mut handles = Vec::with_capacity(total);
+
     for (index, input) in inputs.into_iter().enumerate() {
         send_progress(
             &proxy,
@@ -399,61 +532,120 @@ async fn run_translation_job(
                     .unwrap_or("image")
             ),
         );
-        let result = process_one(
-            &input,
-            &output_dir,
-            &payload.settings,
-            &models,
-            &proxy,
-            index,
-            total,
-        )
-        .await;
-        match result {
-            Ok(Some(output)) => {
-                outputs.push(TranslationOutput {
-                    input: input.display().to_string(),
-                    file_name: output
-                        .file_name()
-                        .and_then(|value| value.to_str())
-                        .map(str::to_owned),
-                    output: Some(output.display().to_string()),
-                    status: "done".to_owned(),
-                    message: "完成".to_owned(),
-                });
-                send_progress(&proxy, index + 1, total, "已完成");
-            }
-            Ok(None) => {
-                outputs.push(TranslationOutput {
-                    input: input.display().to_string(),
-                    output: None,
-                    file_name: None,
-                    status: "skipped".to_owned(),
-                    message: "未检测到可翻译文本".to_owned(),
-                });
-                send_progress(&proxy, index + 1, total, "未检测到文本");
-            }
-            Err(err) => {
-                outputs.push(TranslationOutput {
-                    input: input.display().to_string(),
-                    output: None,
-                    file_name: None,
-                    status: "failed".to_owned(),
-                    message: err.to_string(),
-                });
-                send_progress(&proxy, index + 1, total, "处理失败");
-            }
-        }
+        logger.log(
+            "info",
+            format!(
+                "image {} / {} started: {}",
+                index + 1,
+                total,
+                input.display()
+            ),
+        );
+
+        let output_dir = output_dir.clone();
+        let settings = payload.settings.clone();
+        let models = models.clone();
+        let proxy = proxy.clone();
+        let logger = logger.clone();
+        let output_slots = output_slots.clone();
+        let image_semaphore = image_semaphore.clone();
+        let gpu_semaphore = gpu_semaphore.clone();
+        let debug = payload.debug;
+        handles.push(tokio::spawn(async move {
+            let _image_permit = image_semaphore.acquire_owned().await?;
+            let result = process_one(
+                &input,
+                &output_dir,
+                &settings,
+                &models,
+                &proxy,
+                &logger,
+                &gpu_semaphore,
+                index,
+                total,
+                debug,
+            )
+            .await;
+            let output = match result {
+                Ok(Some(output)) => {
+                    send_progress(&proxy, index + 1, total, "已完成");
+                    logger.log("info", format!("image {} finished", index + 1));
+                    TranslationOutput {
+                        input: input.display().to_string(),
+                        file_name: output
+                            .file_name()
+                            .and_then(|value| value.to_str())
+                            .map(str::to_owned),
+                        output: Some(output.display().to_string()),
+                        status: "done".to_owned(),
+                        message: "完成".to_owned(),
+                    }
+                }
+                Ok(None) => {
+                    send_progress(&proxy, index + 1, total, "未检测到文本");
+                    logger.log("warn", format!("image {} skipped: no text", index + 1));
+                    TranslationOutput {
+                        input: input.display().to_string(),
+                        output: None,
+                        file_name: None,
+                        status: "skipped".to_owned(),
+                        message: "未检测到可翻译文本".to_owned(),
+                    }
+                }
+                Err(err) => {
+                    logger.log("error", format!("image {} failed: {err}", index + 1));
+                    send_log(&proxy, "error", format!("处理失败: {err}"));
+                    send_progress(&proxy, index + 1, total, "处理失败");
+                    TranslationOutput {
+                        input: input.display().to_string(),
+                        output: None,
+                        file_name: None,
+                        status: "failed".to_owned(),
+                        message: err.to_string(),
+                    }
+                }
+            };
+            output_slots.lock().await[index] = Some(output);
+            anyhow::Ok(())
+        }));
     }
+
+    for handle in handles {
+        handle.await??;
+    }
+
+    let outputs = Arc::try_unwrap(output_slots)
+        .map_err(|_| anyhow!("Failed to unwrap output slots"))?
+        .into_inner()
+        .into_iter()
+        .map(|item| item.ok_or_else(|| anyhow!("Missing translation output")))
+        .collect::<Result<Vec<_>>>()?;
 
     let failed = outputs
         .iter()
         .filter(|item| item.status == "failed")
         .count();
     let done = outputs.iter().filter(|item| item.status == "done").count();
+    if let Some(samples) = sample_nvidia_gpu_memory() {
+        for sample in samples {
+            logger.log(
+                "info",
+                format!(
+                    "gpu-memory job-end: {} {} MiB / {} MiB",
+                    sample.name, sample.used_mb, sample.total_mb
+                ),
+            );
+        }
+    }
+    let elapsed = format_duration(job_timer.elapsed());
+    logger.log("info", format!("job finished in {elapsed}"));
+    send_log(&proxy, "success", format!("任务耗时: {elapsed}"));
     Ok(StartTranslationResult {
         status: if failed == 0 { "done" } else { "partial" }.to_owned(),
-        message: format!("已完成 {done} 张，失败 {failed} 张。"),
+        message: format!(
+            "已完成 {done} 张，失败 {failed} 张。日志：{}",
+            logger.path().display()
+        ),
         outputs,
     })
 }
@@ -478,6 +670,17 @@ fn send_progress(
     }));
 }
 
+fn send_log(
+    proxy: &tao::event_loop::EventLoopProxy<UserEvent>,
+    level: impl Into<String>,
+    message: impl Into<String>,
+) {
+    let _ = proxy.send_event(UserEvent::Log(LogEvent {
+        level: level.into(),
+        message: message.into(),
+    }));
+}
+
 fn internal_results_dir() -> PathBuf {
     std::env::current_dir()
         .unwrap_or_else(|_| PathBuf::from("."))
@@ -486,20 +689,45 @@ fn internal_results_dir() -> PathBuf {
         .join(format!("job_{}", uuid::Uuid::new_v4()))
 }
 
-async fn ensure_models(models: &Arc<std::sync::Mutex<Option<Models>>>) -> Result<()> {
-    let needs_init = models.lock().map(|guard| guard.is_none()).unwrap_or(true);
-    if !needs_init {
+fn logs_dir() -> PathBuf {
+    std::env::current_dir()
+        .unwrap_or_else(|_| PathBuf::from("."))
+        .join("logs")
+}
+
+async fn ensure_models(models: &ModelPool, logger: &JobLogger, target_size: usize) -> Result<()> {
+    let current_size = models.lock().await.len();
+    if current_size >= target_size {
+        logger.log(
+            "info",
+            format!("model pool already initialized: {current_size} instances"),
+        );
         return Ok(());
     }
 
-    let cuda = check_cuda();
-    let new_models = Models::new(2, 16, true, cuda).await;
-    let mut guard = models
-        .lock()
-        .map_err(|_| anyhow!("Model state lock was poisoned"))?;
-    if guard.is_none() {
-        *guard = Some(new_models);
+    let cuda = check_cuda_error().is_none();
+    logger.log(
+        "info",
+        format!(
+            "initializing model registry: cuda_feature={}, cuda_available={cuda}",
+            cfg!(feature = "cuda")
+        ),
+    );
+    let missing = target_size - current_size;
+    let mut new_items = Vec::with_capacity(missing);
+    for item_index in 0..missing {
+        logger.log(
+            "info",
+            format!(
+                "creating model pool instance {}",
+                current_size + item_index + 1
+            ),
+        );
+        new_items.push(Models::new(2, 16, true, cuda).await);
     }
+    let mut guard = models.lock().await;
+    guard.extend(new_items);
+    logger.log("info", format!("model pool size={}", guard.len()));
     Ok(())
 }
 
@@ -507,21 +735,24 @@ async fn process_one(
     input: &Path,
     output_dir: &Path,
     settings: &Settings,
-    models: &Arc<std::sync::Mutex<Option<Models>>>,
+    models: &ModelPool,
     proxy: &tao::event_loop::EventLoopProxy<UserEvent>,
+    logger: &JobLogger,
+    gpu_semaphore: &Arc<Semaphore>,
     index: usize,
     total: usize,
+    debug: bool,
 ) -> Result<Option<PathBuf>> {
+    let image_timer = Instant::now();
     let img = image::open(input)?;
+    let debug_path = if debug {
+        Some(diagnostics_path(logger, index, input)?)
+    } else {
+        None
+    };
     let exp = {
-        let mut model_state = {
-            let mut guard = models
-                .lock()
-                .map_err(|_| anyhow!("Model state lock was poisoned"))?;
-            guard
-                .take()
-                .ok_or_else(|| anyhow!("Models were not initialized"))?
-        };
+        let _gpu_permit = gpu_semaphore.acquire().await?;
+        let mut model_state = take_model(models, logger).await?;
         let file_name = input
             .file_name()
             .and_then(|value| value.to_str())
@@ -531,12 +762,15 @@ async fn process_one(
             send_progress(proxy, index, total, format!("{}：{}", file_name, stage));
         };
         let result = model_state
-            .execute_with_progress(img, settings, None, Some(&mut stage_sender))
+            .execute_with_progress_and_logger(
+                img,
+                settings,
+                debug_path,
+                Some(&mut stage_sender),
+                Some(logger),
+            )
             .await;
-        let mut guard = models
-            .lock()
-            .map_err(|_| anyhow!("Model state lock was poisoned"))?;
-        *guard = Some(model_state);
+        return_model(models, model_state).await;
         result?
     };
     let Some(exp) = exp else {
@@ -563,9 +797,75 @@ async fn process_one(
     );
     output.set_extension(settings.render.renderer.extension());
     prepare_renderer_assets(&output, &settings.render.renderer)?;
+    let render_timer = StageTimer::start("render", Some(logger));
     let data = render_export_bytes_with_settings(exp, settings)?;
+    render_timer.finish();
+    let write_timer = StageTimer::start("write", Some(logger));
     File::create(&output)?.write_all(&data)?;
+    write_timer.finish();
+    logger.log(
+        "info",
+        format!(
+            "image output written: {} ({})",
+            output.display(),
+            format_duration(image_timer.elapsed())
+        ),
+    );
     Ok(Some(output))
+}
+
+async fn take_model(models: &ModelPool, logger: &JobLogger) -> Result<Models> {
+    if let Some(model) = models.lock().await.pop() {
+        return Ok(model);
+    }
+    logger.log(
+        "warn",
+        "model pool was empty; creating an extra model instance",
+    );
+    let cuda = check_cuda_error().is_none();
+    Ok(Models::new(2, 16, true, cuda).await)
+}
+
+async fn return_model(models: &ModelPool, model: Models) {
+    models.lock().await.push(model);
+}
+
+fn diagnostics_path(logger: &JobLogger, index: usize, input: &Path) -> Result<PathBuf> {
+    let log_stem = logger
+        .path()
+        .file_stem()
+        .and_then(|value| value.to_str())
+        .unwrap_or("job");
+    let root = logger
+        .path()
+        .parent()
+        .unwrap_or_else(|| Path::new("."))
+        .join(format!("{log_stem}_diagnostics"));
+    let image_stem = input
+        .file_stem()
+        .and_then(|value| value.to_str())
+        .map(sanitize_path_component)
+        .filter(|value| !value.is_empty())
+        .unwrap_or_else(|| "image".to_owned());
+    let path = root.join(format!("{:03}_{image_stem}", index + 1));
+    create_dir_all(&path)?;
+    logger.log(
+        "info",
+        format!("image {} diagnostics_dir={}", index + 1, path.display()),
+    );
+    Ok(path)
+}
+
+fn sanitize_path_component(value: &str) -> String {
+    value
+        .chars()
+        .map(|ch| match ch {
+            '<' | '>' | ':' | '"' | '/' | '\\' | '|' | '?' | '*' => '_',
+            ch if ch.is_control() => '_',
+            ch => ch,
+        })
+        .take(80)
+        .collect()
 }
 
 fn open_path(path: &Path) -> Result<()> {
