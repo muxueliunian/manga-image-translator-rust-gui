@@ -11,6 +11,31 @@ pub type TranslatorType = Arc<dyn AsyncTranslator + Send + Sync>;
 /// concurrent images without duplicating ONNX sessions (and the VRAM they hold).
 pub struct Translators(Mutex<HashMap<Translator, TranslatorType>>);
 
+/// Caches translator output keyed on `(config signature, source text)`. Manga pages
+/// reuse a lot of text (character names, SFX, recurring lines), so the same source
+/// string is often translated many times across a batch. The cache lives on the shared
+/// `Arc<Models>`, so a hit produced by one image is reused by every concurrent image.
+/// The key embeds a hash of the translator chain + settings, so changing the target
+/// language, model, or prompt transparently invalidates stale entries.
+#[derive(Default)]
+pub struct TranslationCache(Mutex<HashMap<String, String>>);
+
+impl TranslationCache {
+    /// Look up several keys under a single lock. Returns one slot per key, `None` on miss.
+    pub async fn get_batch(&self, keys: &[String]) -> Vec<Option<String>> {
+        let guard = self.0.lock().await;
+        keys.iter().map(|key| guard.get(key).cloned()).collect()
+    }
+
+    /// Store freshly translated entries under a single lock.
+    pub async fn insert_batch(&self, entries: impl IntoIterator<Item = (String, String)>) {
+        let mut guard = self.0.lock().await;
+        for (key, value) in entries {
+            guard.insert(key, value);
+        }
+    }
+}
+
 async fn create_papago() -> Option<TranslatorType> {
     Some(Arc::new(
         interface_translator::PapagoTranslator::new(false)
