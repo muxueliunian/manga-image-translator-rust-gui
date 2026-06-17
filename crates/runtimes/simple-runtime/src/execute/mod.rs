@@ -27,7 +27,7 @@ pub type StageCallback<'a> = Option<&'a mut (dyn FnMut(&'static str) + Send)>;
 
 impl Models {
     pub async fn execute(
-        &mut self,
+        &self,
         img: DynamicImage,
         config: &Settings,
         debug_path: Option<PathBuf>,
@@ -37,7 +37,7 @@ impl Models {
     }
 
     pub async fn execute_with_progress(
-        &mut self,
+        &self,
         img: DynamicImage,
         config: &Settings,
         debug_path: Option<PathBuf>,
@@ -48,7 +48,7 @@ impl Models {
     }
 
     pub async fn execute_with_progress_and_logger(
-        &mut self,
+        &self,
         img: DynamicImage,
         config: &Settings,
         debug_path: Option<PathBuf>,
@@ -60,7 +60,7 @@ impl Models {
     }
 
     async fn execute_inner(
-        &mut self,
+        &self,
         img: DynamicImage,
         config: &Settings,
         debug_path: Option<PathBuf>,

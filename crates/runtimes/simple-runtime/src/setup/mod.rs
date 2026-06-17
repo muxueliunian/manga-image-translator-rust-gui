@@ -41,10 +41,7 @@ impl Models {
     pub fn get_ocr(&self, ocr: OCR) -> &OcrType {
         self.ocrs.get(ocr)
     }
-    pub async fn get_translator(
-        &mut self,
-        translator: Translator,
-    ) -> anyhow::Result<&mut TranslatorType> {
+    pub async fn get_translator(&self, translator: Translator) -> anyhow::Result<TranslatorType> {
         self.translators.get(translator, self.cuda).await
     }
     pub fn get_inpainter(&self, inpainter: Inpainter) -> &InpainterType {

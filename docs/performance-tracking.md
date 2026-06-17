@@ -157,6 +157,7 @@
 |------|--------|----------|----------|------:|-----:|-----:|-----------|-----------|
 | 2026-06-16 | **基线** | 补齐阶段汇总日志 + debug 开关（仅可观测） | — | 17.62s / 2图 | — | — | 无 | `job_1781619508991.log`；images=2/gpu=2，debug=ON，DeepSeek |
 | 2026-06-17 | **① inpainter bbox 局部修补** | `lama_aot` 改为按 mask 连通域 bbox（dilate padding=32 合并 + 上下文）裁剪小图分别修补再贴回；碎框>32 或覆盖>60% 自动回退整页；空 mask 直接返回原图。仅改 `lama_aot`+`util/lama.rs`，`lama_large/lama_mpe` 待验证后 port | inpainter | 待测 | 待测 | 待测 | 待确认（局部修补，需对比样张） | debug=OFF；先 images=1/gpu=1 再 2/2 |
+| 2026-06-17 | **② 共享只读 session / 降显存** | 模型池从 `Vec<Models>` 整份复制改为单份 `Arc<Models>` 共享；translator 存储改 `Mutex<HashMap>` 内部可变，整条 execute 走 `&self`；并发靠 `gpu_semaphore` 受控提交，依赖 `AsyncSessionPool` 内部并发 | 显存 / inpainter+ocr+detector 抖动 | 待测 | 待测 | 待测 | 无（不改算法） | debug=OFF；关注 `nvidia-smi` 显存峰值是否从 ~96% 下降 |
 
 > 填写提醒：
 > - "提升"写百分比或倍数（如 `-35%` 或 `1.5x`）。
