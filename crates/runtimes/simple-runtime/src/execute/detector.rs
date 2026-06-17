@@ -6,7 +6,7 @@ use crate::{execute::ImageProcessor, settings::DetectorSettings, setup::Models};
 
 impl Models {
     pub async fn run_detector(
-        &mut self,
+        &self,
         img: &RawImage,
         config: &DetectorSettings,
         ip: &ImageProcessor,

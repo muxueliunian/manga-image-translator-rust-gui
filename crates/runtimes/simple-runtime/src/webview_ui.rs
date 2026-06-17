@@ -35,7 +35,11 @@ use crate::{
 const INDEX_HTML: &str = include_str!("../webview/index.html");
 const STYLES_CSS: &str = include_str!("../webview/styles.css");
 const APP_JS: &str = include_str!("../webview/app.js");
-type ModelPool = Arc<AsyncMutex<Vec<Models>>>;
+// A single shared `Models` instance serves all concurrent images. The pipeline runs with
+// `&self`, and `AsyncSessionPool` handles concurrent ONNX submissions internally, so there
+// is no need to duplicate `Models` (which would double the resident VRAM). GPU concurrency
+// is bounded by `gpu_semaphore`.
+type ModelPool = Arc<AsyncMutex<Option<Arc<Models>>>>;
 
 #[derive(Debug)]
 enum UserEvent {
@@ -170,7 +174,7 @@ pub fn run() -> Result<()> {
     let event_loop = EventLoopBuilder::<UserEvent>::with_user_event().build();
     let proxy = event_loop.create_proxy();
     let ipc_proxy = proxy.clone();
-    let models: ModelPool = Arc::new(AsyncMutex::new(Vec::new()));
+    let models: ModelPool = Arc::new(AsyncMutex::new(None));
     let window = WindowBuilder::new()
         .with_title("漫画图片翻译器")
         .with_inner_size(LogicalSize::new(1180.0, 780.0))
@@ -504,13 +508,9 @@ async fn run_translation_job(
     }
     let total = inputs.len();
 
-    let requested_pool_size = payload
-        .max_parallel_images
-        .min(payload.max_parallel_gpu_jobs)
-        .max(1);
     send_progress(&proxy, 0, total, "正在准备模型");
     let timer = StageTimer::start("model-prepare", Some(&logger));
-    ensure_models(&models, &logger, requested_pool_size).await?;
+    ensure_models(&models, &logger).await?;
     timer.finish();
 
     let output_slots: Arc<AsyncMutex<Vec<Option<TranslationOutput>>>> =
@@ -695,40 +695,24 @@ fn logs_dir() -> PathBuf {
         .join("logs")
 }
 
-async fn ensure_models(models: &ModelPool, logger: &JobLogger, target_size: usize) -> Result<()> {
-    let current_size = models.lock().await.len();
-    if current_size >= target_size {
-        logger.log(
-            "info",
-            format!("model pool already initialized: {current_size} instances"),
-        );
-        return Ok(());
+async fn ensure_models(models: &ModelPool, logger: &JobLogger) -> Result<Arc<Models>> {
+    let mut guard = models.lock().await;
+    if let Some(existing) = guard.as_ref() {
+        logger.log("info", "shared model registry already initialized");
+        return Ok(existing.clone());
     }
 
     let cuda = check_cuda_error().is_none();
     logger.log(
         "info",
         format!(
-            "initializing model registry: cuda_feature={}, cuda_available={cuda}",
+            "initializing shared model registry: cuda_feature={}, cuda_available={cuda}",
             cfg!(feature = "cuda")
         ),
     );
-    let missing = target_size - current_size;
-    let mut new_items = Vec::with_capacity(missing);
-    for item_index in 0..missing {
-        logger.log(
-            "info",
-            format!(
-                "creating model pool instance {}",
-                current_size + item_index + 1
-            ),
-        );
-        new_items.push(Models::new(2, 16, true, cuda).await);
-    }
-    let mut guard = models.lock().await;
-    guard.extend(new_items);
-    logger.log("info", format!("model pool size={}", guard.len()));
-    Ok(())
+    let instance = Arc::new(Models::new(2, 16, true, cuda).await);
+    *guard = Some(instance.clone());
+    Ok(instance)
 }
 
 async fn process_one(
@@ -752,7 +736,7 @@ async fn process_one(
     };
     let exp = {
         let _gpu_permit = gpu_semaphore.acquire().await?;
-        let mut model_state = take_model(models, logger).await?;
+        let model_state = shared_models(models, logger).await?;
         let file_name = input
             .file_name()
             .and_then(|value| value.to_str())
@@ -761,7 +745,7 @@ async fn process_one(
         let mut stage_sender = |stage: &'static str| {
             send_progress(proxy, index, total, format!("{}：{}", file_name, stage));
         };
-        let result = model_state
+        model_state
             .execute_with_progress_and_logger(
                 img,
                 settings,
@@ -769,9 +753,7 @@ async fn process_one(
                 Some(&mut stage_sender),
                 Some(logger),
             )
-            .await;
-        return_model(models, model_state).await;
-        result?
+            .await?
     };
     let Some(exp) = exp else {
         return Ok(None);
@@ -814,20 +796,12 @@ async fn process_one(
     Ok(Some(output))
 }
 
-async fn take_model(models: &ModelPool, logger: &JobLogger) -> Result<Models> {
-    if let Some(model) = models.lock().await.pop() {
-        return Ok(model);
+async fn shared_models(models: &ModelPool, logger: &JobLogger) -> Result<Arc<Models>> {
+    if let Some(model) = models.lock().await.as_ref() {
+        return Ok(model.clone());
     }
-    logger.log(
-        "warn",
-        "model pool was empty; creating an extra model instance",
-    );
-    let cuda = check_cuda_error().is_none();
-    Ok(Models::new(2, 16, true, cuda).await)
-}
-
-async fn return_model(models: &ModelPool, model: Models) {
-    models.lock().await.push(model);
+    // Should not happen: ensure_models runs before any image. Initialize defensively.
+    ensure_models(models, logger).await
 }
 
 fn diagnostics_path(logger: &JobLogger, index: usize, input: &Path) -> Result<PathBuf> {

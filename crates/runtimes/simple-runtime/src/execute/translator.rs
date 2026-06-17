@@ -18,7 +18,7 @@ use crate::{
 
 impl Models {
     pub async fn run_translators(
-        &mut self,
+        &self,
         textblocks: Vec<TextBlock>,
         config: &TranslatorSettings,
         debug_path: Option<&Path>,
@@ -34,7 +34,7 @@ impl Models {
     }
 
     pub async fn run_translator_list(
-        &mut self,
+        &self,
         mut textblocks: Vec<TextBlock>,
         translators: &[Translation],
         config: &TranslatorSettings,
@@ -84,7 +84,7 @@ impl Models {
         Ok(textblocks)
     }
     pub async fn run_translator_item(
-        &mut self,
+        &self,
         input: TranslationListOutput,
         translator_info: &Translation,
         config: &TranslatorSettings,
