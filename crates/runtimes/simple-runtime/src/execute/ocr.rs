@@ -27,7 +27,15 @@ impl Models {
         info!("Run OCR: {:?}", config.ocr);
         let textlines = self
             .get_ocr(config.ocr)
-            .detect(img, areas, OcrOptions { debug_path }, ip)
+            .detect(
+                img,
+                areas,
+                OcrOptions {
+                    debug_path,
+                    beam_size: Some(config.beam_size as i32),
+                },
+                ip,
+            )
             .await?;
         Ok(textlines)
     }

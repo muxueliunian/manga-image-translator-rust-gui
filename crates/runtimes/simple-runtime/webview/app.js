@@ -28,6 +28,7 @@ const i18n = {
     boxThresholdHint: "保留文本框的最低分数，越高越严格。默认 0.7。",
     minTextLengthHint: "短于该字符数的识别结果会被丢弃。默认 1。",
     ocrProbHint: "OCR 置信度下限，越高越少误检低质文本。默认 0.2。",
+    beamSizeHint: "仅对 Ocr48px 生效。1=贪心最快但略降准确率，越大越稳越慢。默认 5。",
     filterTextHint: "命中这些正则的文本不翻译（逗号分隔，如拟声词）。",
     ignoreBubbleHint: "忽略小于该像素阈值的气泡噪点，0 为不忽略。",
     dilationOffsetHint: "mask 膨胀像素，越大覆盖越广但易糊到画面。默认 20。",
@@ -89,6 +90,7 @@ const i18n = {
     ocrModel: "OCR 模型",
     minTextLength: "最短文本",
     ocrProb: "OCR 置信度",
+    beamSize: "Beam 宽度",
     filterText: "过滤文本",
     maskMethod: "Mask 方法",
     ignoreBubble: "忽略气泡",
@@ -184,6 +186,7 @@ const i18n = {
     boxThresholdHint: "Minimum score to keep a text box; higher is stricter. Default 0.7.",
     minTextLengthHint: "Drop OCR results shorter than this many characters. Default 1.",
     ocrProbHint: "Minimum OCR confidence; higher drops more low-quality text. Default 0.2.",
+    beamSizeHint: "Ocr48px only. 1 = greedy (fastest, slightly less accurate); higher is more robust but slower. Default 5.",
     filterTextHint: "Text matching these regexes is left untranslated (comma-separated, e.g. sound effects).",
     ignoreBubbleHint: "Ignore bubble specks smaller than this pixel threshold; 0 disables.",
     dilationOffsetHint: "Mask dilation in pixels. Larger covers more but can bleed into art. Default 20.",
@@ -245,6 +248,7 @@ const i18n = {
     ocrModel: "OCR Model",
     minTextLength: "Min Text Length",
     ocrProb: "OCR Probability",
+    beamSize: "Beam Width",
     filterText: "Filter Text",
     maskMethod: "Mask Method",
     ignoreBubble: "Ignore Bubble",
@@ -391,6 +395,7 @@ const els = {
   ocrModel: document.getElementById("ocrModel"),
   minTextLength: document.getElementById("minTextLength"),
   ocrProb: document.getElementById("ocrProb"),
+  beamSize: document.getElementById("beamSize"),
   filterText: document.getElementById("filterText"),
   maskMethod: document.getElementById("maskMethod"),
   ignoreBubble: document.getElementById("ignoreBubble"),
@@ -979,6 +984,7 @@ function syncControlsFromSettings() {
   els.ocrModel.value = ocr.ocr || "Ocr48px";
   els.minTextLength.value = ocr.min_text_length ?? 1;
   els.ocrProb.value = ocr.prob ?? 0.2;
+  els.beamSize.value = ocr.beam_size ?? 5;
   els.filterText.value = Array.isArray(ocr.filter_text) ? ocr.filter_text.join(", ") : "";
   els.maskMethod.value = maskRefinement.method || "FitText";
   els.ignoreBubble.value = maskRefinement.ignore_bubble ?? 0;
@@ -1046,6 +1052,7 @@ function patchSettingsFromControls() {
   cfg.ocr.ocr = els.ocrModel.value;
   cfg.ocr.min_text_length = parseIntegerOrDefault(els.minTextLength.value, 1);
   cfg.ocr.prob = parseNumberOrDefault(els.ocrProb.value, 0.2);
+  cfg.ocr.beam_size = parseIntegerOrDefault(els.beamSize.value, 5);
   cfg.ocr.filter_text = parseCsvList(els.filterText.value);
   cfg.mask_refinement = cfg.mask_refinement || {};
   cfg.mask_refinement.method = els.maskMethod.value;
@@ -1399,6 +1406,7 @@ async function bootstrap() {
     els.ocrModel,
     els.minTextLength,
     els.ocrProb,
+    els.beamSize,
     els.filterText,
     els.maskMethod,
     els.ignoreBubble,

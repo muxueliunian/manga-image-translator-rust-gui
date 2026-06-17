@@ -19,6 +19,7 @@
   },
   "ocr": {
     "ocr": "Ocr48px",
+    "beam_size": 5,
     "use_mocr_merge": false,
     "min_text_length": 1,
     "filter_text": [],
