@@ -1,7 +1,7 @@
 use std::{ops::Deref, sync::Arc};
 
 use base_util::onnx::{new_session, Providers};
-use interface_image::{ImageOp, RawImageCow};
+use interface_image::{ImageOp, RawImage, RawImageCow, RawImageView};
 use interface_inpainter::{Inpainter, InpainterOptions};
 use interface_model::{
     impl_model_helpers, impl_model_load_helpers, Model, ModelLoad, ModelRead, ModelSource,
@@ -12,9 +12,16 @@ use ndarray::{ArrayView4, Axis};
 use ort::{inputs, session::RunOptions, value::Tensor};
 use ort_parallel::AsyncSessionPool;
 use util::{
-    lama::{lama_add_border, lama_resize_image},
+    lama::{crop_mask, crop_rgb, lama_add_border, lama_mask_regions, lama_resize_image, paste_rgb},
     spawn_blocking,
 };
+
+/// Context margin (px) added around each text region before inpainting.
+const LOCAL_INPAINT_PADDING: interface_image::DimType = 32;
+/// If the mask splits into more regions than this, fall back to whole-page inpainting.
+const MAX_LOCAL_REGIONS: usize = 32;
+/// If the regions together cover more than this fraction of the page, whole-page is cheaper.
+const MAX_LOCAL_COVERAGE: f64 = 0.6;
 
 pub struct LamaLargeInpainter {
     model: ModelWrap<AsyncSessionPool>,
@@ -53,20 +60,21 @@ impl Model for LamaLargeInpainter {
     }
 }
 
-#[async_trait::async_trait]
-impl Inpainter for LamaLargeInpainter {
-    async fn inpaint(
+impl LamaLargeInpainter {
+    /// Run LaMa on a single (whole-image or cropped) region and return an RGB image at the
+    /// same size as the input view. Only the masked pixels matter to the caller; pixels
+    /// outside the mask are discarded during compositing.
+    async fn inpaint_region(
         &self,
-        image: &interface_image::RawImage,
+        image: RawImageView<'_>,
         mask: interface_image::Mask,
-        options: InpainterOptions,
+        inpainting_size: u16,
         img_processor: &Arc<dyn ImageOp + Send + Sync>,
-    ) -> anyhow::Result<interface_image::RawImage> {
+    ) -> anyhow::Result<RawImage> {
         let ho = image.height;
         let wo = image.width;
         let (image, mask, w, h, new_w, new_h) = spawn_blocking!(|| {
-            let (image, mask) =
-                lama_resize_image(image.view(), mask, options.inpainting_size, img_processor)?;
+            let (image, mask) = lama_resize_image(image, mask, inpainting_size, img_processor)?;
             let mut image = image.to_owned();
             let h = image.height;
             let w = image.width;
@@ -119,6 +127,56 @@ impl Inpainter for LamaLargeInpainter {
         })??;
 
         Ok(img)
+    }
+}
+
+#[async_trait::async_trait]
+impl Inpainter for LamaLargeInpainter {
+    async fn inpaint(
+        &self,
+        image: &interface_image::RawImage,
+        mask: interface_image::Mask,
+        options: InpainterOptions,
+        img_processor: &Arc<dyn ImageOp + Send + Sync>,
+    ) -> anyhow::Result<interface_image::RawImage> {
+        let regions = lama_mask_regions(&mask, LOCAL_INPAINT_PADDING)?;
+
+        // Nothing to inpaint: masked pixels are the only ones kept downstream.
+        if regions.is_empty() {
+            return Ok(image.view().to_owned());
+        }
+
+        // Decide whether local (bbox) inpainting is worthwhile. If the text is too
+        // fragmented or covers most of the page, a single whole-page pass is cheaper.
+        let page_area = image.width as f64 * image.height as f64;
+        let region_area: f64 = regions.iter().map(|b| b.w as f64 * b.h as f64).sum::<f64>();
+        let use_local = regions.len() <= MAX_LOCAL_REGIONS
+            && (page_area <= 0.0 || region_area / page_area <= MAX_LOCAL_COVERAGE);
+
+        if !use_local {
+            return self
+                .inpaint_region(image.view(), mask, options.inpainting_size, img_processor)
+                .await;
+        }
+
+        // Local path: inpaint each text region on a small crop and paste it back. The
+        // surrounding (unmasked) pixels of each crop are discarded during compositing,
+        // so seams cannot appear in the final output.
+        let mut output = image.view().to_owned();
+        for b in &regions {
+            let crop_img = crop_rgb(image.view(), b);
+            let crop_msk = crop_mask(&mask, b);
+            let inpainted = self
+                .inpaint_region(
+                    crop_img.view(),
+                    crop_msk,
+                    options.inpainting_size,
+                    img_processor,
+                )
+                .await?;
+            paste_rgb(&mut output, &inpainted, b);
+        }
+        Ok(output)
     }
 }
 
