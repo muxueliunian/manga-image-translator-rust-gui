@@ -134,8 +134,18 @@
 
 - **A. 降低显存占用（模型池共享只读 session，而非整份复制 `Models`）** —— 直接缓解 96% 显存压力与争用，让 inpainter/ocr/detector 抖动收敛，并允许更高并发。**最高杠杆**。
 - **B. inpainter 改 bbox 局部修补** —— 减少 inpainter 时间与显存。
-- **C. OCR `Ctc48px` / beam 配置化** —— 减少 ocr 时间（质量需 A/B）。
+- **C. OCR `Ctc48px` / beam 配置化 / 新增 `PP-OCRv6`** —— 减少 ocr 时间（质量需 A/B）。
 - **D. translator** —— 本地算法层能做的有限：加翻译缓存（重复台词/拟声词）、保持整页一次批量请求（已是）。换更快 LLM / 本地 MT 属选型。
+
+### PP-OCRv6 排期（2026-06-17 加入计划）
+
+新增 PP-OCRv6 系列 OCR 模型属"模型选型"，与 A/B/D 的"算法/内存优化"是两类事，且**新增 OCR 会改变 baseline**，中途换 OCR 会污染 inpainter/显存/缓存这几项的 before/after 对比。因此排期如下：
+
+1. inpainter bbox 局部修补（B）。
+2. 共享只读 session、降显存（A，文档标为最高杠杆）。
+3. 翻译缓存（D 的本地部分）。
+4. **OCR 统一 A/B**：在固定 baseline 上一次性对比 `Ocr48px`（现状）/ `Ctc48px` / beam 配置化 / **`PP-OCRv6`**，按速度 + 质量选默认。
+5. PP-OCRv6 的**模块开发可并行**起独立分支推进（实现 trait → settings enum → setup 注册 → execute 接入 → schema/GUI），但只在第 4 步并入对比与默认切换，避免干扰前三项测量。
 
 ---
 
@@ -146,7 +156,7 @@
 | 日期 | 优化项 | 改动概述 | 目标阶段 | Before | After | 提升 | 质量回归? | 备注/日志 |
 |------|--------|----------|----------|------:|-----:|-----:|-----------|-----------|
 | 2026-06-16 | **基线** | 补齐阶段汇总日志 + debug 开关（仅可观测） | — | 17.62s / 2图 | — | — | 无 | `job_1781619508991.log`；images=2/gpu=2，debug=ON，DeepSeek |
-|  |  |  |  |  |  |  |  |  |
+| 2026-06-17 | **① inpainter bbox 局部修补** | `lama_aot` 改为按 mask 连通域 bbox（dilate padding=32 合并 + 上下文）裁剪小图分别修补再贴回；碎框>32 或覆盖>60% 自动回退整页；空 mask 直接返回原图。仅改 `lama_aot`+`util/lama.rs`，`lama_large/lama_mpe` 待验证后 port | inpainter | 待测 | 待测 | 待测 | 待确认（局部修补，需对比样张） | debug=OFF；先 images=1/gpu=1 再 2/2 |
 
 > 填写提醒：
 > - "提升"写百分比或倍数（如 `-35%` 或 `1.5x`）。
