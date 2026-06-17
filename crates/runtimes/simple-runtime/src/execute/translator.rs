@@ -46,40 +46,73 @@ impl Models {
             .iter_mut()
             .filter(|v| !v.skip_translate)
             .collect::<Vec<_>>();
-
-        let texts = textblocks_use
-            .iter()
-            .map(|v| v.text.clone())
-            .collect::<Vec<_>>();
         for tb in &textblocks_use {
             assert!(tb.translations.is_empty());
         }
 
-        let d_str = texts.join(" ");
-        let lang = self.lang_detector.detect_language(&d_str);
-
-        let mut texts = TranslationListOutput { text: texts, lang };
-
-        for (index, translator) in translators.iter().enumerate() {
-            let out = self
-                .run_translator_item(texts, translator, config, debug_path, logger, index + 1)
-                .await?;
-            let lang_str = out.lang.map(|v| v.to_name().unwrap()).unwrap_or("unknown");
-            for (i, item) in out.text.iter().enumerate() {
-                textblocks_use[i]
-                    .translations
-                    .insert(lang_str.to_owned(), item.to_owned());
-            }
-            texts = out;
+        // Nothing to translate (every block was filtered out upstream).
+        if textblocks_use.is_empty() {
+            return Ok(textblocks);
         }
-        let lang_str = texts
-            .lang
-            .map(|v| v.to_name().unwrap())
-            .unwrap_or("unknown");
 
-        for item in textblocks_use.iter_mut() {
-            item.translations
-                .insert("last_trans".to_owned(), lang_str.to_owned());
+        // Per-block cache lookup. The signature pins the translator chain + settings so a
+        // change to target language / model / prompt won't return stale translations.
+        let signature = cache_signature(translators, config);
+        let keys = textblocks_use
+            .iter()
+            .map(|tb| cache_key(signature, &tb.text))
+            .collect::<Vec<_>>();
+        let cached = self.translation_cache.get_batch(&keys).await;
+
+        // `final_texts[i]` is the final translation for `textblocks_use[i]`, in order.
+        let mut final_texts = vec![String::new(); textblocks_use.len()];
+        let mut miss_indices = Vec::new();
+        let mut miss_texts = Vec::new();
+        for (i, hit) in cached.into_iter().enumerate() {
+            match hit {
+                Some(text) => final_texts[i] = text,
+                None => {
+                    miss_indices.push(i);
+                    miss_texts.push(textblocks_use[i].text.clone());
+                }
+            }
+        }
+
+        if !miss_texts.is_empty() {
+            let lang = self.lang_detector.detect_language(&miss_texts.join(" "));
+            let mut texts = TranslationListOutput {
+                text: miss_texts,
+                lang,
+            };
+            // Run the (possibly chained) translators only on the cache misses.
+            for (index, translator) in translators.iter().enumerate() {
+                texts = self
+                    .run_translator_item(texts, translator, config, debug_path, logger, index + 1)
+                    .await?;
+            }
+
+            let mut new_entries = Vec::with_capacity(miss_indices.len());
+            for (slot, &i) in miss_indices.iter().enumerate() {
+                let translated = texts.text[slot].clone();
+                new_entries.push((keys[i].clone(), translated.clone()));
+                final_texts[i] = translated;
+            }
+            self.translation_cache.insert_batch(new_entries).await;
+        }
+
+        // Record the output language from the assembled translations (cached + fresh),
+        // matching the previous behavior of stamping one language per block.
+        let lang_str = self
+            .lang_detector
+            .detect_language(&final_texts.join(" "))
+            .and_then(|v| v.to_name())
+            .unwrap_or("unknown")
+            .to_owned();
+        for (i, tb) in textblocks_use.iter_mut().enumerate() {
+            tb.translations
+                .insert(lang_str.clone(), final_texts[i].clone());
+            tb.translations
+                .insert("last_trans".to_owned(), lang_str.clone());
         }
         Ok(textblocks)
     }
@@ -155,6 +188,26 @@ impl Models {
 
         Ok(TranslationListOutput { text, lang })
     }
+}
+
+/// Stable hash of the translator chain + settings. Two requests share cached
+/// translations only when this matches, so changing the target language, model,
+/// prompt, or temperature transparently invalidates old entries.
+fn cache_signature(translators: &[Translation], config: &TranslatorSettings) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    // serde_json is already a dependency here; serializing both gives a faithful,
+    // forward-compatible signature without hand-maintaining a field list.
+    if let Ok(serialized) = serde_json::to_string(&(translators, config)) {
+        serialized.hash(&mut hasher);
+    }
+    hasher.finish()
+}
+
+/// Cache key for one source string under a given configuration signature. The unit
+/// separator byte cannot appear in either part, so keys are unambiguous.
+fn cache_key(signature: u64, text: &str) -> String {
+    format!("{signature:016x}\u{1f}{text}")
 }
 
 #[derive(Serialize)]

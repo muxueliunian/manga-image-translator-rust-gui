@@ -18,6 +18,7 @@ use crate::setup::inpainter::InpainterType;
 use crate::setup::inpainter::Inpainters;
 use crate::setup::ocr::OCRs;
 use crate::setup::ocr::OcrType;
+use crate::setup::translator::TranslationCache;
 use crate::setup::translator::TranslatorType;
 use crate::setup::translator::Translators;
 
@@ -29,6 +30,8 @@ pub struct Models {
     inpainters: Inpainters,
     cuda: bool,
     pub lang_detector: LangIdDetector,
+    /// Shared text→translation cache; see [`TranslationCache`].
+    pub(crate) translation_cache: TranslationCache,
 }
 
 impl Models {
@@ -62,6 +65,7 @@ impl Models {
             inpainters: Inpainters::new(),
             ocrs: OCRs::new(max_batch_size_ocr),
             translators: Translators::new(cuda).await,
+            translation_cache: TranslationCache::default(),
         }
     }
 }
