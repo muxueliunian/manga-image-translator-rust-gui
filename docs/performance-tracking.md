@@ -156,9 +156,10 @@
 | 日期 | 优化项 | 改动概述 | 目标阶段 | Before | After | 提升 | 质量回归? | 备注/日志 |
 |------|--------|----------|----------|------:|-----:|-----:|-----------|-----------|
 | 2026-06-16 | **基线** | 补齐阶段汇总日志 + debug 开关（仅可观测） | — | 17.62s / 2图 | — | — | 无 | `job_1781619508991.log`；images=2/gpu=2，debug=ON，DeepSeek |
-| 2026-06-17 | **① inpainter bbox 局部修补** | 按 mask 连通域 bbox（dilate padding=32 合并 + 上下文）裁剪小图分别修补再贴回；碎框>32 或覆盖>60% 自动回退整页；空 mask 直接返回原图。helper 在 `util/lama.rs`，已 port 到全部三模型 `lama_aot`/`lama_large`/`lama_mpe`（mpe 的 rel_pos/direct 按局部 mask 计算） | inpainter | 待测 | 待测 | 待测 | 待确认（局部修补，需对比样张） | debug=OFF；先 images=1/gpu=1 再 2/2 |
-| 2026-06-17 | **② 共享只读 session / 降显存** | 模型池从 `Vec<Models>` 整份复制改为单份 `Arc<Models>` 共享；translator 存储改 `Mutex<HashMap>` 内部可变，整条 execute 走 `&self`；并发靠 `gpu_semaphore` 受控提交，依赖 `AsyncSessionPool` 内部并发 | 显存 / inpainter+ocr+detector 抖动 | 待测 | 待测 | 待测 | 无（不改算法） | debug=OFF；关注 `nvidia-smi` 显存峰值是否从 ~96% 下降 |
-| 2026-06-17 | **③ 翻译缓存** | 在共享 `Arc<Models>` 上加 `TranslationCache(Mutex<HashMap>)`，按**单条 textblock 文本**缓存译者输出；key = `hash(译者链+配置)` + 原文（改语言/模型/prompt 自动失效）；仅对未命中的文本发起翻译，命中跳过 LLM。pre-dict/post-dict 是独立 stage，不影响缓存正确性 | translator | 待测 | 待测 | 待测 | 无（仅缓存，命中即原译文复用；链式译者的中间语言条目不再写入，但渲染只读 `last_trans`） | debug=OFF；重复台词/角色名多的图册命中率更高，关注 translator stage 占比下降 |
+| 2026-06-17 | **① inpainter bbox 局部修补** | 按 mask 连通域 bbox（dilate padding=32 合并 + 上下文）裁剪小图分别修补再贴回；碎框>32 或覆盖>60% 自动回退整页；空 mask 直接返回原图。helper 在 `util/lama.rs`，已 port 到全部三模型 `lama_aot`/`lama_large`/`lama_mpe`（mpe 的 rel_pos/direct 按局部 mask 计算） | inpainter | 0.93s/图 | 0.36s/图 | **-61%（≈2.6×）** | 无（已目视确认，与整页修补几乎无差异） | 热运行 4 图均值；基线 `job_1781711769500` vs 优化 `job_1781711808387`；debug=OFF, images=2/gpu=1, DeepSeek |
+| 2026-06-17 | **② 共享只读 session / 降显存** | 模型池从 `Vec<Models>` 整份复制改为单份 `Arc<Models>` 共享；translator 存储改 `Mutex<HashMap>` 内部可变，整条 execute 走 `&self`；并发靠 `gpu_semaphore` 受控提交，依赖 `AsyncSessionPool` 内部并发 | 显存 / 架构 | 显存 ~7.5GB（pool=1） | ~7.5GB（pool=1） | 本配置无变化、无回归 | 无（不改算法） | 两包均 “1 instance”，本测未触发整份复制故显存无差；②的价值是高并发(pool>1)防翻倍 **且使 ③ 的缓存能跨图共享** |
+| 2026-06-17 | **③ 翻译缓存** | 在共享 `Arc<Models>` 上加 `TranslationCache(Mutex<HashMap>)`，按**单条 textblock 文本**缓存译者输出；key = `hash(译者链+配置)` + 原文（改语言/模型/prompt 自动失效）；仅对未命中的文本发起翻译，命中跳过 LLM。pre-dict/post-dict 是独立 stage，不影响缓存正确性 | translator | 2.78–6.87s/图 | 0ms（全命中） | 重复内容 ≈ **-100%** | 无（命中即原译文复用） | **全命中是因为重跑同一批图**；首次翻译新内容仍走 LLM（不命中），缓存只省重复台词/角色名/重跑 |
+| 2026-06-18 | **合计（①②③ 热运行）** | 同批 4 图，debug=OFF，images=2/gpu=1，DeepSeek，模型已加载、缓存已预热 | 整体 | **32.78s / 4图** | **10.17s / 4图** | **-69%（3.2×）** | 见各项 | 基线 `job_1781711769500` vs 优化 `job_1781711808387`。提速主因：缓存命中省去 ~18.5s LLM + inpainter 省 ~2.3s。**注意**：此倍数含“重跑命中”红利，首翻新章不会有 translator=0 |
 
 > 填写提醒：
 > - "提升"写百分比或倍数（如 `-35%` 或 `1.5x`）。
