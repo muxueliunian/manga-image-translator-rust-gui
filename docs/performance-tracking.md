@@ -156,7 +156,7 @@
 | 日期 | 优化项 | 改动概述 | 目标阶段 | Before | After | 提升 | 质量回归? | 备注/日志 |
 |------|--------|----------|----------|------:|-----:|-----:|-----------|-----------|
 | 2026-06-16 | **基线** | 补齐阶段汇总日志 + debug 开关（仅可观测） | — | 17.62s / 2图 | — | — | 无 | `job_1781619508991.log`；images=2/gpu=2，debug=ON，DeepSeek |
-| 2026-06-17 | **① inpainter bbox 局部修补** | `lama_aot` 改为按 mask 连通域 bbox（dilate padding=32 合并 + 上下文）裁剪小图分别修补再贴回；碎框>32 或覆盖>60% 自动回退整页；空 mask 直接返回原图。仅改 `lama_aot`+`util/lama.rs`，`lama_large/lama_mpe` 待验证后 port | inpainter | 待测 | 待测 | 待测 | 待确认（局部修补，需对比样张） | debug=OFF；先 images=1/gpu=1 再 2/2 |
+| 2026-06-17 | **① inpainter bbox 局部修补** | 按 mask 连通域 bbox（dilate padding=32 合并 + 上下文）裁剪小图分别修补再贴回；碎框>32 或覆盖>60% 自动回退整页；空 mask 直接返回原图。helper 在 `util/lama.rs`，已 port 到全部三模型 `lama_aot`/`lama_large`/`lama_mpe`（mpe 的 rel_pos/direct 按局部 mask 计算） | inpainter | 待测 | 待测 | 待测 | 待确认（局部修补，需对比样张） | debug=OFF；先 images=1/gpu=1 再 2/2 |
 | 2026-06-17 | **② 共享只读 session / 降显存** | 模型池从 `Vec<Models>` 整份复制改为单份 `Arc<Models>` 共享；translator 存储改 `Mutex<HashMap>` 内部可变，整条 execute 走 `&self`；并发靠 `gpu_semaphore` 受控提交，依赖 `AsyncSessionPool` 内部并发 | 显存 / inpainter+ocr+detector 抖动 | 待测 | 待测 | 待测 | 无（不改算法） | debug=OFF；关注 `nvidia-smi` 显存峰值是否从 ~96% 下降 |
 | 2026-06-17 | **③ 翻译缓存** | 在共享 `Arc<Models>` 上加 `TranslationCache(Mutex<HashMap>)`，按**单条 textblock 文本**缓存译者输出；key = `hash(译者链+配置)` + 原文（改语言/模型/prompt 自动失效）；仅对未命中的文本发起翻译，命中跳过 LLM。pre-dict/post-dict 是独立 stage，不影响缓存正确性 | translator | 待测 | 待测 | 待测 | 无（仅缓存，命中即原译文复用；链式译者的中间语言条目不再写入，但渲染只读 `last_trans`） | debug=OFF；重复台词/角色名多的图册命中率更高，关注 translator stage 占比下降 |
 
