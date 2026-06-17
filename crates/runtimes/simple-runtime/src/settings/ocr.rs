@@ -14,17 +14,32 @@ pub enum OCR {
     Ocr48px,
 }
 
-#[derive(Serialize, Deserialize, Default, Clone, JsonSchema)]
+#[derive(Serialize, Deserialize, Clone, JsonSchema)]
 #[serde(default)]
 pub struct OCRSettings {
     /// Optical character recognition (OCR) model to use
     pub ocr: OCR,
+    /// Beam search width for autoregressive OCR models (only `Ocr48px`).
+    /// 1 = greedy (fastest, slightly less accurate); higher keeps more candidate
+    /// sequences (slower, more robust). Default 5. Ignored by non-autoregressive models.
+    pub beam_size: usize,
     /// Use bbox merge when Manga OCR inference.
     /// todo: not used
     use_mocr_merge: bool,
 
     #[serde(flatten)]
     pub post_processing: PostProcessingSettings,
+}
+
+impl Default for OCRSettings {
+    fn default() -> Self {
+        Self {
+            ocr: OCR::default(),
+            beam_size: 5,
+            use_mocr_merge: false,
+            post_processing: PostProcessingSettings::default(),
+        }
+    }
 }
 
 #[derive(Serialize, Deserialize, Clone, JsonSchema)]

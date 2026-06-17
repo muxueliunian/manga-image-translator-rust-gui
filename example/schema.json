@@ -48,6 +48,7 @@
       "description": "Settings for the OCR module",
       "$ref": "#/$defs/OCRSettings",
       "default": {
+        "beam_size": 5,
         "filter_text": [],
         "min_text_length": 1,
         "ocr": "Ocr48px",
@@ -2364,6 +2365,13 @@
     "OCRSettings": {
       "type": "object",
       "properties": {
+        "beam_size": {
+          "description": "Beam search width for autoregressive OCR models (only `Ocr48px`).\n1 = greedy (fastest, slightly less accurate); higher keeps more candidate\nsequences (slower, more robust). Default 5. Ignored by non-autoregressive models.",
+          "type": "integer",
+          "format": "uint",
+          "default": 5,
+          "minimum": 0
+        },
         "filter_text": {
           "description": "Filter regions by their text with a regex. Example usage: '.*badtext.*'",
           "type": "array",

@@ -8,6 +8,9 @@ use serde::{Deserialize, Serialize};
 #[derive(Default)]
 pub struct OcrOptions {
     pub debug_path: Option<PathBuf>,
+    /// Beam search width for autoregressive OCR models (currently only `Ocr48px`).
+    /// `None` keeps the model default. Other OCR implementations ignore this.
+    pub beam_size: Option<i32>,
 }
 
 #[async_trait::async_trait]

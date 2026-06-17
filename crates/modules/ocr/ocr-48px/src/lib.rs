@@ -187,6 +187,8 @@ impl Ocr for Ocr48px {
             &options.debug_path,
         ))??;
         let max_seq_len = self.max_seq_len;
+        // Beam search width is configurable; clamp to >=1 (0 would disable decoding).
+        let beams_k = options.beam_size.unwrap_or(5).max(1);
         let model = self.load().await?;
         let ((encoder, decoder, color_pred), dict) = model.deref();
         let dict = &*dict;
@@ -200,7 +202,7 @@ impl Ocr for Ocr48px {
                 widths,
                 1,
                 2,
-                5,
+                beams_k,
                 max_seq_len,
                 2,
                 &run_options,
