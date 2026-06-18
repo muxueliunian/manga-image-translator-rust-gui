@@ -1,61 +1,106 @@
+/* ── Theme-independent tokens (type, spacing, radius) ── */
 :root {
-  color-scheme: dark;
-
-  /* Surfaces — graphite "darkroom" shell that recedes so the manga page is the
-     only bright thing on screen. */
-  --bg: #16181c;
-  --surface: #1e2024;
-  --surface-muted: #26292f;
-  --surface-raised: #2a2d32;
-  --line: #34383f;
-  --line-strong: #434852;
-
-  /* Text */
-  --text: #e6e7e9;
-  --muted: #8a8f98;
-
-  /* Single accent — 朱 / 印泥红, used only for active state, progress and
-     (later) the translation overlay highlight. */
-  --accent: #c8453b;
-  --accent-strong: #d85a50;
-  --accent-soft: #2e2120;
-  --on-accent: #ffffff;
-  --focus-ring: rgba(216, 90, 80, 0.5);
-
-  /* Status — dark-tuned */
-  --success: #6fca94;
-  --success-soft: #1b2620;
-  --success-line: #2f5a44;
-  --warn: #d6a95c;
-  --warn-soft: #29241a;
-  --warn-line: #5a4c2e;
-  --danger: #e8736a;
-  --danger-soft: #2a1d1c;
-  --danger-line: #5a3733;
-  --info-soft: #1c2128;
-  --info-line: #3a4452;
-
-  /* Type — UI grotesque + monospace for numeric HUD/data readouts */
   --font-ui: Inter, "Segoe UI", "Microsoft YaHei", "PingFang SC", Arial, sans-serif;
   --font-mono: "Cascadia Mono", Consolas, ui-monospace, monospace;
 
-  /* Spacing scale */
   --space-1: 4px;
   --space-2: 8px;
   --space-3: 12px;
   --space-4: 16px;
 
-  /* Radius + elevation */
   --radius: 4px;
   --radius-sm: 3px;
   --radius-pill: 999px;
-  --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.35);
 
   font-family: var(--font-ui);
 }
 
+/* ── Dark theme (default) — Claude classic palette: warm graphite + clay ── */
+:root,
+[data-theme="dark"] {
+  color-scheme: dark;
+
+  --bg: #1a1917;
+  --surface: #262624;
+  --surface-muted: #302f2c;
+  --surface-raised: #3a3834;
+  --line: #3a3835;
+  --line-strong: #4b4943;
+
+  --text: #eceae3;
+  --muted: #a8a49b;
+
+  /* Single accent — Claude clay/coral */
+  --accent: #cc785c;
+  --accent-strong: #d88a6e;
+  --accent-soft: #33271f;
+  --on-accent: #ffffff;
+  --focus-ring: rgba(204, 120, 92, 0.5);
+
+  --success: #7fb890;
+  --success-soft: #1e2a22;
+  --success-line: #33503d;
+  --warn: #d9b871;
+  --warn-soft: #2b2719;
+  --warn-line: #544a2d;
+  --danger: #e08577;
+  --danger-soft: #2e1e1a;
+  --danger-line: #5a3a32;
+  --info-soft: #2a2823;
+  --info-line: #4a463d;
+
+  --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.35);
+}
+
+/* ── Light theme — Claude classic palette: warm paper + clay ── */
+[data-theme="light"] {
+  color-scheme: light;
+
+  --bg: #faf9f5;
+  --surface: #ffffff;
+  --surface-muted: #f0eee6;
+  --surface-raised: #ffffff;
+  --line: #e6e3d9;
+  --line-strong: #d6d2c5;
+
+  --text: #1f1e1b;
+  --muted: #6f6c64;
+
+  --accent: #cc785c;
+  --accent-strong: #b5614a;
+  --accent-soft: #f5e7df;
+  --on-accent: #ffffff;
+  --focus-ring: rgba(181, 97, 74, 0.4);
+
+  --success: #2f7d52;
+  --success-soft: #eaf3ec;
+  --success-line: #bfd9c7;
+  --warn: #8a6a1f;
+  --warn-soft: #f7f0df;
+  --warn-line: #e3d3a6;
+  --danger: #b5483c;
+  --danger-soft: #fbedea;
+  --danger-line: #e6c3bc;
+  --info-soft: #f0eee6;
+  --info-line: #d8d3c5;
+
+  --shadow-1: 0 1px 2px rgba(60, 50, 40, 0.08);
+}
+
 * {
   box-sizing: border-box;
+}
+
+/* Globally hide scrollbars (keep scrolling) — per design feedback. */
+* {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+*::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+  display: none;
 }
 
 body {
@@ -1310,6 +1355,27 @@ svg {
 
 .acc-body {
   padding: 10px;
+}
+
+/* ── Theme toggle (sun in dark = switch to light, moon in light = switch to dark) ── */
+#themeToggle {
+  width: 32px;
+}
+
+.theme-icon-sun {
+  display: block;
+}
+
+.theme-icon-moon {
+  display: none;
+}
+
+[data-theme="light"] .theme-icon-sun {
+  display: none;
+}
+
+[data-theme="light"] .theme-icon-moon {
+  display: block;
 }
 
 /* Narrow windows (min 960): collapse the inspector to keep the canvas usable. */
