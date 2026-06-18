@@ -66,17 +66,45 @@
           <input id="treeSearch" type="search" autocomplete="off" spellcheck="false" data-i18n-placeholder="treeSearchPlaceholder" placeholder="过滤文件名…">
         </div>
         <div class="path-list" id="inputList" tabindex="0" aria-live="polite"></div>
+
+        <div class="filmstrip-results" id="filmstripResults" hidden>
+          <div class="results-resizer" id="resultsResizer" role="separator" aria-orientation="horizontal" tabindex="0"></div>
+          <div class="zone-head results-head">
+            <h2 data-i18n="completedTitle">已完成翻译</h2>
+            <div class="results-head-actions">
+              <span id="resultStats" class="zone-meta"></span>
+              <button id="selectAllResults" class="ghost-button small-button" type="button" data-i18n="selectAllResults">全选</button>
+            </div>
+          </div>
+          <div class="result-list" id="results"></div>
+        </div>
+        <div class="col-resizer" id="filmstripResizer" role="separator" aria-orientation="vertical" tabindex="0"></div>
       </aside>
 
-      <!-- ── CANVAS ── -->
+      <!-- ── CANVAS (+ run log docked beneath it, VS Code terminal style) ── -->
       <section class="canvas" aria-label="Canvas">
-        <div class="canvas-stage">
-          <div id="results" class="empty-state" data-i18n="resultEmpty">暂无结果。完成翻译后可预览图片，并选择导出到指定目录。</div>
+        <div class="canvas-stage" id="canvasStage">
+          <div class="empty-state" data-i18n="previewHint">单击左侧条目预览图片。</div>
         </div>
-        <div class="canvas-bar">
-          <button id="selectAllResults" class="ghost-button" type="button" data-i18n="selectAllResults">全选</button>
-          <span id="resultStats" class="zone-meta" data-i18n="resultStatsEmpty">暂无结果</span>
-        </div>
+        <footer class="statusbar">
+          <div class="statusbar-resizer" id="logResizer" data-i18n-title="logResizeHint" role="separator" aria-orientation="horizontal" tabindex="0"></div>
+          <div class="statusbar-top">
+            <div class="statusbar-info">
+              <strong id="statusTitle" data-i18n="readyTitle">准备就绪</strong>
+              <span id="statusText" data-i18n="readyText">选择输入与输出目录后即可开始。</span>
+            </div>
+            <div class="progress-wrap" aria-live="polite">
+              <div class="progress-track">
+                <div id="progressBar" class="progress-bar"></div>
+              </div>
+              <span id="progressLabel" data-i18n="progressIdle">等待任务</span>
+            </div>
+            <div class="statusbar-top-spacer"></div>
+            <h2 class="statusbar-log-title" data-i18n="logTitle">运行记录</h2>
+            <button id="clearLog" class="ghost-button" type="button" data-i18n="clearLog">清空</button>
+          </div>
+          <div id="logList" class="log-list" aria-live="polite"></div>
+        </footer>
       </section>
 
       <!-- ── INSPECTOR ── -->
@@ -473,27 +501,6 @@
         </div>
       </aside>
     </div>
-
-    <!-- ───────────────────────── STATUS BAR ───────────────────────── -->
-    <footer class="statusbar">
-      <div class="statusbar-resizer" id="logResizer" data-i18n-title="logResizeHint" role="separator" aria-orientation="horizontal" tabindex="0"></div>
-      <div class="statusbar-top">
-        <div class="statusbar-info">
-          <strong id="statusTitle" data-i18n="readyTitle">准备就绪</strong>
-          <span id="statusText" data-i18n="readyText">选择输入与输出目录后即可开始。</span>
-        </div>
-        <div class="progress-wrap" aria-live="polite">
-          <div class="progress-track">
-            <div id="progressBar" class="progress-bar"></div>
-          </div>
-          <span id="progressLabel" data-i18n="progressIdle">等待任务</span>
-        </div>
-        <div class="statusbar-top-spacer"></div>
-        <h2 class="statusbar-log-title" data-i18n="logTitle">运行记录</h2>
-        <button id="clearLog" class="ghost-button" type="button" data-i18n="clearLog">清空</button>
-      </div>
-      <div id="logList" class="log-list" aria-live="polite"></div>
-    </footer>
   </main>
 
   <script>

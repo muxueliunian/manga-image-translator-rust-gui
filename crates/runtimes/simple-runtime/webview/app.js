@@ -124,6 +124,8 @@ const i18n = {
     start: "开始翻译",
     running: "翻译中…",
     resultTitle: "预览与导出",
+    completedTitle: "已完成翻译",
+    previewHint: "单击左侧条目预览图片。",
     resultStatsEmpty: "暂无结果",
     resultStats: "完成 {done} · 失败 {failed} · 跳过 {skipped}",
     resultEmpty: "暂无结果。完成翻译后可预览图片，并选择导出到指定目录。",
@@ -292,6 +294,8 @@ const i18n = {
     start: "Start Translating",
     running: "Translating…",
     resultTitle: "Preview and Export",
+    completedTitle: "Completed",
+    previewHint: "Click an item on the left to preview.",
     resultStatsEmpty: "No results",
     resultStats: "Done {done} · Failed {failed} · Skipped {skipped}",
     resultEmpty: "No results yet. Finished images can be previewed and exported after translation.",
@@ -364,6 +368,11 @@ const PATH_DISPLAY_LIMIT = 56;
 const CUDA_SUMMARY_LIMIT = 96;
 const LOG_HEIGHT_KEY = "mitWebviewLogHeight";
 const LOG_HEIGHT_MIN = 92;
+const FILMSTRIP_WIDTH_KEY = "mitFilmstripWidth";
+const FILMSTRIP_WIDTH_MIN = 160;
+const FILMSTRIP_WIDTH_MAX = 520;
+const RESULTS_HEIGHT_KEY = "mitResultsHeight";
+const RESULTS_HEIGHT_MIN = 96;
 
 const ICON_CHEVRON =
   '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6" /></svg>';
@@ -478,7 +487,11 @@ const els = {
   selectAllResults: document.getElementById("selectAllResults"),
   exportSelected: document.getElementById("exportSelected"),
   resultStats: document.getElementById("resultStats"),
+  filmstripResults: document.getElementById("filmstripResults"),
   results: document.getElementById("results"),
+  canvasStage: document.getElementById("canvasStage"),
+  filmstripResizer: document.getElementById("filmstripResizer"),
+  resultsResizer: document.getElementById("resultsResizer"),
   logList: document.getElementById("logList"),
   clearLog: document.getElementById("clearLog"),
   statusbar: document.querySelector(".statusbar"),
@@ -628,6 +641,7 @@ function applyLang() {
     startLabel.textContent = t("start");
   }
   renderTree();
+  renderResults();
   renderCanvas();
   renderLogEmptyState();
   refreshGuidance();
@@ -1072,7 +1086,10 @@ function setActiveNode(node, { preview = false, focus = true } = {}) {
   const showPreview = preview && !node.isDir;
   if (showPreview) state.preview = node.path;
   renderTree();
-  if (showPreview) renderCanvas();
+  if (showPreview) {
+    renderResults(); // a tree preview deselects any active result row
+    renderCanvas();
+  }
   if (focus) els.inputList.focus({ preventScroll: true });
   scrollActiveIntoView();
 }
@@ -1632,25 +1649,34 @@ async function startTranslation() {
   }
 }
 
-// The canvas shows a single-click preview when one is active; otherwise it
-// falls back to the translation results view (P4 will merge these fully).
+// The canvas is the preview area: it shows whatever is active (a tree file or a
+// completed result), or a hint when nothing is selected. Results live in the
+// left panel now (P3d), so the canvas is dedicated to the pan/zoom viewer.
 function renderCanvas() {
-  if (state.preview) {
-    els.results.className = "canvas-preview";
-    els.results.innerHTML = "";
-    const viewport = document.createElement("div");
-    viewport.className = "canvas-viewport";
-    const img = document.createElement("img");
-    img.className = "canvas-img";
-    img.alt = "";
-    img.draggable = false;
-    viewport.append(img);
-    els.results.append(viewport);
-    setupImageViewer(viewport, img);
-    loadLocalImage(img, state.preview);
+  const stage = els.canvasStage;
+  stage.innerHTML = "";
+  if (!state.preview) {
+    stage.className = "canvas-stage";
+    const empty = document.createElement("div");
+    empty.className = "empty-state";
+    empty.textContent = t("previewHint");
+    stage.append(empty);
     return;
   }
-  renderResults();
+  stage.className = "canvas-stage has-preview";
+  const wrap = document.createElement("div");
+  wrap.className = "canvas-preview";
+  const viewport = document.createElement("div");
+  viewport.className = "canvas-viewport";
+  const img = document.createElement("img");
+  img.className = "canvas-img";
+  img.alt = "";
+  img.draggable = false;
+  viewport.append(img);
+  wrap.append(viewport);
+  stage.append(wrap);
+  setupImageViewer(viewport, img);
+  loadLocalImage(img, state.preview);
 }
 
 // Lightweight pan/zoom for the preview canvas (no library). The image starts
@@ -1739,40 +1765,38 @@ function setupImageViewer(viewport, img) {
 
 function renderResult(result) {
   const outputs = Array.isArray(result.outputs) ? result.outputs : [];
-  // Translation results take over the canvas from any single-click preview.
-  state.preview = "";
   state.results = outputs;
   state.selectedResults = new Set(
     outputs
       .filter((item) => item.status === "done" && item.output)
       .map((item) => item.output),
   );
-  renderResults(result);
+  // Show the first finished page on the canvas right away.
+  const firstDone = outputs.find((item) => item.status === "done" && item.output);
+  if (firstDone) {
+    state.preview = firstDone.output;
+    state.activePath = "";
+  }
+  renderTree();
+  renderResults();
+  renderCanvas();
 }
 
-function renderResults(result = null) {
-  const counts = countResults(state.results);
-  els.resultStats.textContent =
-    state.results.length === 0
-      ? t("resultStatsEmpty")
-      : t("resultStats", counts);
-
-  if (!state.results.length) {
-    els.results.className = "empty-state";
-    els.results.textContent = t("resultEmpty");
-    els.selectAllResults.textContent = t("selectAllResults");
+// Render the "completed translations" list in the left panel (P3d). Rows are
+// compact (no thumbnail — the canvas is the preview); a checkbox drives export
+// selection, clicking the row previews the output on the canvas.
+function renderResults() {
+  const has = state.results.length > 0;
+  els.filmstripResults.hidden = !has;
+  if (!has) {
+    els.resultStats.textContent = "";
+    els.results.innerHTML = "";
     return;
   }
 
+  els.resultStats.textContent = t("resultStats", countResults(state.results));
   els.results.className = "result-list";
-  const summary = result
-    ? `<div class="result-summary"><strong>${escapeHtml(statusLabel(result.status || "done"))}</strong><span class="muted">${escapeHtml(summarizeText(result.message || "", 100))}</span></div>`
-    : "";
-  const rows = state.results.map((item, index) => resultCard(item, index)).join("");
-  els.results.innerHTML = `${summary}<div class="result-grid">${rows}</div>`;
-  els.results
-    .querySelectorAll("img[data-localpath]")
-    .forEach((img) => loadLocalImage(img, img.dataset.localpath));
+  els.results.innerHTML = state.results.map((item, index) => resultRow(item, index)).join("");
 
   const doneOutputs = state.results.filter((item) => item.status === "done" && item.output);
   const allSelected =
@@ -1780,30 +1804,31 @@ function renderResults(result = null) {
   els.selectAllResults.textContent = allSelected ? t("deselectAllResults") : t("selectAllResults");
 }
 
-function resultCard(item, index) {
+function resultRow(item, index) {
   const output = item.output || "";
-  const checked = output && state.selectedResults.has(output) ? "checked" : "";
-  const canUse = item.status === "done" && output;
   const status = item.status || "";
-  const thumb = canUse && output.toLowerCase().endsWith(".png")
-    ? `<div class="result-thumb"><img alt="" data-localpath="${escapeAttr(output)}"></div>`
-    : `<div class="result-thumb">${escapeHtml(statusLabel(status))}</div>`;
-  const message = item.message ? summarizeText(item.message, 80) : "";
+  const canUse = status === "done" && output;
+  const checked = canUse && state.selectedResults.has(output) ? "checked" : "";
+  const isActive = output && output === state.preview;
   return `
-    <article class="result-item" data-status="${escapeHtml(status)}">
-      <label class="result-check">
-        <input type="checkbox" data-result-index="${index}" ${checked} ${canUse ? "" : "disabled"}>
-        <span title="${escapeAttr(item.file_name || status)}">${escapeHtml(item.file_name || statusLabel(status))}</span>
-        <span class="status-badge" data-status="${escapeHtml(status)}">${escapeHtml(statusLabel(status))}</span>
-      </label>
-      ${thumb}
-      <p class="result-path" title="${escapeAttr(output || item.input || "")}">${escapeHtml(truncateMiddle(output || item.input || "-", 42))}</p>
-      ${message ? `<p class="result-message" title="${escapeAttr(item.message || "")}">${escapeHtml(message)}</p>` : ""}
-      <div class="result-actions-row">
-        <button class="ghost-button small-button" type="button" data-preview-index="${index}" ${canUse ? "" : "disabled"}>${t("preview")}</button>
-      </div>
-    </article>
+    <div class="result-row${isActive ? " is-active" : ""}${canUse ? " is-file" : ""}" data-result-index="${index}" title="${escapeAttr(output || item.input || item.message || "")}">
+      <input type="checkbox" class="result-check-box" data-result-index="${index}" ${checked} ${canUse ? "" : "disabled"}>
+      <span class="tree-icon">${ICON_FILE}</span>
+      <span class="result-name">${escapeHtml(item.file_name || statusLabel(status))}</span>
+      <span class="status-badge" data-status="${escapeHtml(status)}">${escapeHtml(statusLabel(status))}</span>
+    </div>
   `;
+}
+
+// Click a completed result → preview its output image on the canvas.
+function previewResultOutput(index) {
+  const item = state.results[index];
+  if (!item || item.status !== "done" || !item.output) return;
+  state.preview = item.output;
+  state.activePath = "";
+  renderTree();
+  renderResults();
+  renderCanvas();
 }
 
 // WebView2 won't load file:// or custom-scheme images as subresources from a
@@ -1937,10 +1962,115 @@ function initLogResizer() {
   window.addEventListener("resize", () => applyLogHeight(bar.offsetHeight));
 }
 
+function applyFilmstripWidth(px) {
+  const clamped = Math.max(FILMSTRIP_WIDTH_MIN, Math.min(FILMSTRIP_WIDTH_MAX, Math.round(px)));
+  document.documentElement.style.setProperty("--filmstrip-width", `${clamped}px`);
+  return clamped;
+}
+
+// Drag the filmstrip's right edge to resize the column; persist the width.
+function initFilmstripResizer() {
+  const handle = els.filmstripResizer;
+  const filmstrip = handle?.parentElement;
+  if (!handle || !filmstrip) return;
+
+  const saved = Number(localStorage.getItem(FILMSTRIP_WIDTH_KEY));
+  if (Number.isFinite(saved) && saved > 0) applyFilmstripWidth(saved);
+
+  let startX = 0;
+  let startW = 0;
+  let lastW = 0;
+  let dragging = false;
+
+  const onMove = (event) => {
+    if (dragging) lastW = applyFilmstripWidth(startW + (event.clientX - startX));
+  };
+  const onUp = () => {
+    if (!dragging) return;
+    dragging = false;
+    handle.classList.remove("is-dragging");
+    localStorage.setItem(FILMSTRIP_WIDTH_KEY, String(lastW));
+    window.removeEventListener("pointermove", onMove);
+    window.removeEventListener("pointerup", onUp);
+  };
+
+  handle.addEventListener("pointerdown", (event) => {
+    dragging = true;
+    startX = event.clientX;
+    startW = filmstrip.offsetWidth;
+    lastW = startW;
+    handle.classList.add("is-dragging");
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+    event.preventDefault();
+  });
+  handle.addEventListener("keydown", (event) => {
+    if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+    event.preventDefault();
+    lastW = applyFilmstripWidth(filmstrip.offsetWidth + (event.key === "ArrowRight" ? 16 : -16));
+    localStorage.setItem(FILMSTRIP_WIDTH_KEY, String(lastW));
+  });
+}
+
+function applyResultsHeight(px) {
+  // Bound so the input tree above keeps a usable minimum.
+  const filmstrip = els.filmstripResults?.parentElement;
+  const max = filmstrip ? Math.max(RESULTS_HEIGHT_MIN, filmstrip.clientHeight - 200) : 600;
+  const clamped = Math.max(RESULTS_HEIGHT_MIN, Math.min(max, Math.round(px)));
+  document.documentElement.style.setProperty("--results-height", `${clamped}px`);
+  return clamped;
+}
+
+// Drag the top edge of the completed-translations section to resize its height.
+function initResultsResizer() {
+  const handle = els.resultsResizer;
+  const panel = els.filmstripResults;
+  if (!handle || !panel) return;
+
+  const saved = Number(localStorage.getItem(RESULTS_HEIGHT_KEY));
+  if (Number.isFinite(saved) && saved > 0) applyResultsHeight(saved);
+
+  let startY = 0;
+  let startH = 0;
+  let lastH = 0;
+  let dragging = false;
+
+  const onMove = (event) => {
+    if (dragging) lastH = applyResultsHeight(startH + (startY - event.clientY));
+  };
+  const onUp = () => {
+    if (!dragging) return;
+    dragging = false;
+    handle.classList.remove("is-dragging");
+    localStorage.setItem(RESULTS_HEIGHT_KEY, String(lastH));
+    window.removeEventListener("pointermove", onMove);
+    window.removeEventListener("pointerup", onUp);
+  };
+
+  handle.addEventListener("pointerdown", (event) => {
+    dragging = true;
+    startY = event.clientY;
+    startH = panel.offsetHeight;
+    lastH = startH;
+    handle.classList.add("is-dragging");
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+    event.preventDefault();
+  });
+  handle.addEventListener("keydown", (event) => {
+    if (event.key !== "ArrowUp" && event.key !== "ArrowDown") return;
+    event.preventDefault();
+    lastH = applyResultsHeight(panel.offsetHeight + (event.key === "ArrowUp" ? 24 : -24));
+    localStorage.setItem(RESULTS_HEIGHT_KEY, String(lastH));
+  });
+}
+
 async function bootstrap() {
   applyTheme(state.theme);
   applyLang();
   initLogResizer();
+  initFilmstripResizer();
+  initResultsResizer();
   renderTree();
   renderLogEmptyState();
 
@@ -2086,16 +2216,26 @@ async function bootstrap() {
   window.addEventListener("blur", () => closeTreeContextMenu());
   els.inputList.addEventListener("scroll", () => closeTreeContextMenu());
   els.results.addEventListener("click", (event) => {
-    const previewIndex = event.target?.dataset?.previewIndex;
-    if (previewIndex !== undefined) {
-      previewResult(Number(previewIndex));
-    }
+    if (event.target.closest("input.result-check-box")) return; // change handles it
+    const row = event.target.closest(".result-row");
+    if (row) previewResultOutput(Number(row.dataset.resultIndex));
   });
   els.results.addEventListener("change", (event) => {
-    const resultIndex = event.target?.dataset?.resultIndex;
-    if (resultIndex !== undefined) {
-      toggleResult(Number(resultIndex), event.target.checked);
-    }
+    const cb = event.target.closest("input.result-check-box");
+    if (cb) toggleResult(Number(cb.dataset.resultIndex), cb.checked);
+  });
+  // Double-click opens the output in the OS image viewer; right-click reveals it.
+  els.results.addEventListener("dblclick", (event) => {
+    const row = event.target.closest(".result-row");
+    if (row) previewResult(Number(row.dataset.resultIndex));
+  });
+  els.results.addEventListener("contextmenu", (event) => {
+    const row = event.target.closest(".result-row");
+    if (!row) return;
+    const item = state.results[Number(row.dataset.resultIndex)];
+    if (!item?.output) return;
+    event.preventDefault();
+    showTreeContextMenu({ path: item.output }, event.clientX, event.clientY, false);
   });
   els.clearLog.addEventListener("click", () => {
     els.logList.innerHTML = "";

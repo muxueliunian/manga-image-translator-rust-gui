@@ -1081,7 +1081,7 @@ svg {
 .app {
   height: 100vh;
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr) auto;
+  grid-template-rows: auto minmax(0, 1fr);
   background: var(--bg);
 }
 
@@ -1132,7 +1132,7 @@ svg {
 /* ── Workspace ── */
 .workspace {
   display: grid;
-  grid-template-columns: 208px minmax(0, 1fr) 360px;
+  grid-template-columns: var(--filmstrip-width, 208px) minmax(0, 1fr) 360px;
   min-height: 0;
 }
 
@@ -1145,6 +1145,7 @@ svg {
 }
 
 .filmstrip {
+  position: relative;
   border-right: 1px solid var(--line);
 }
 
@@ -1548,6 +1549,130 @@ svg {
   background: var(--surface-muted);
 }
 
+/* ── Completed-translations section in the left panel (P3d) ── */
+/* `display:flex` below would otherwise defeat the `hidden` attribute. */
+.filmstrip-results[hidden] {
+  display: none;
+}
+
+/* Bottom section of the filmstrip; height drag-adjustable + persisted (P3e). */
+.filmstrip-results {
+  position: relative;
+  flex: 0 0 auto;
+  height: var(--results-height, 220px);
+  min-height: 96px;
+  display: flex;
+  flex-direction: column;
+  border-top: 1px solid var(--line);
+}
+
+/* Horizontal handle straddling the top edge of the results section. */
+.results-resizer {
+  position: absolute;
+  top: -3px;
+  left: 0;
+  right: 0;
+  height: 7px;
+  cursor: ns-resize;
+  z-index: 5;
+}
+
+.results-resizer:hover,
+.results-resizer.is-dragging {
+  background: var(--accent-soft);
+}
+
+.results-head {
+  flex: 0 0 auto;
+}
+
+.results-head-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.filmstrip .result-list {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  margin: 0;
+  padding: 6px 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+/* Vertical handle on the filmstrip's right edge; drags the column width (P3e). */
+.col-resizer {
+  position: absolute;
+  top: 0;
+  right: -3px;
+  width: 7px;
+  height: 100%;
+  cursor: ew-resize;
+  z-index: 6;
+}
+
+.col-resizer:hover,
+.col-resizer.is-dragging {
+  background: var(--accent-soft);
+}
+
+.result-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 26px;
+  padding: 2px 6px;
+  border-radius: var(--radius-sm);
+  cursor: default;
+  user-select: none;
+}
+
+.result-row.is-file {
+  cursor: pointer;
+}
+
+.result-row:hover {
+  background: var(--surface-muted);
+}
+
+.result-row.is-active {
+  background: var(--accent-soft);
+}
+
+.result-row.is-active .result-name {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.result-check-box {
+  flex: 0 0 auto;
+  width: 14px;
+  height: 14px;
+  min-height: 14px;
+  margin: 0;
+  cursor: pointer;
+  accent-color: var(--accent);
+}
+
+.result-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  color: var(--text);
+}
+
+/* Canvas fills edge-to-edge while previewing so big pages get the whole area. */
+.canvas-stage.has-preview {
+  padding: 0;
+  place-items: stretch;
+}
+
 /* ── Canvas single-click preview + pan/zoom viewer (P3b/P4) ── */
 .canvas-preview {
   width: 100%;
@@ -1581,6 +1706,6 @@ svg {
 /* Narrow windows (min 960): collapse the inspector to keep the canvas usable. */
 @media (max-width: 1080px) {
   .workspace {
-    grid-template-columns: 180px minmax(0, 1fr) 320px;
+    grid-template-columns: var(--filmstrip-width, 180px) minmax(0, 1fr) 320px;
   }
 }
