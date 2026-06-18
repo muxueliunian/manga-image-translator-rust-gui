@@ -272,7 +272,30 @@ favicon 能命中 handler)。
 - 三态复选框 + 懒加载子树:未加载的子项勾选态要在展开时正确回填。
 - 树渲染条目可能很多,注意虚拟化或至少避免一次性重渲染整树(沿用隐藏滚动条)。
 
-## 待办 · M1 — 模型管理(2026-06-18 追加,**仅记录,未开工**)
+## M1 — 模型管理(M1a 已完成 2026-06-19;M1b 待续)
+
+### 进度
+- **M1a ✅(可配置模型根 + 持久化)**:已实现、编译通过、打包成功;**未目检**(用户授权先 commit,次日测)。
+- **M1b ⏳(模型状态表 + 一键下载 + 自动下载)**:未开工。
+- 决策(用户 2026-06-19):**严格无默认**(webview 强制,egui/CLI 回退老默认不破坏)、M1b 用 **trait `files()`**、模型页 = **工具栏按钮 + 弹出面板**。
+
+### M1a 实现记录
+- `interface_model`(本地 0.12.2)加全局 `static MODEL_ROOT: RwLock<ModelRootMode{Default|Configured(PathBuf)|RequireConfigured}>`
+  + `set_model_root()` / `model_base_dir()`;`ModelDb::get` 改用 `model_base_dir()?.join(kind).join(name)`。
+- `webview_ui.rs`:`config/models.json`(`{model_dir, auto_download}`)load/save;`run()` 启动即 `apply_models_config`
+  (有目录→Configured;否则→RequireConfigured);新增 IPC `GetModelsConfig`/`SetModelsDir`(选目录存盘+设根)/`SetAutoDownload`。
+  simple-runtime 新增直接依赖 `interface-model`。
+- 前端:工具栏「模型」按钮 + 弹出面板(modal,目录显示 + 选择目录 + 自动下载开关 + `#modelsStatus` 占位留 M1b)。
+
+### ⚠ 关键限制(dual interface-model,务必记住)
+项目里有**两个 interface-model**:本地 **0.12.2**(path)给 detector/OCR/inpainter/upscaler 用;git **0.11.0**
+(`github.com/frederik-uni/manga-image-translator-rust`)给 **aio-translator-*** 即本地翻译器 Sugoi/NLLB/M2M100/MBart/JParaCrawl 用。
+两者是**不同 crate 实例**,全局 `static` 不互通 → **M1a 的可配置根只对 0.12.2 那批(detector/ocr/inpainter/upscaler)生效**;
+本地翻译器模型仍走老 `root_path()/models` → 便携包内仍会重下。**API 翻译器(OpenAI/DeepSeek 等)无模型下载,不受影响**。
+**待办 M1c(可选)**:用 Cargo `[patch."https://github.com/frederik-uni/manga-image-translator-rust"] interface-model = { path = "crates/interface/model" }`
+把 git 0.11.0 重定向到本地 0.12.2 统一实例 → 翻译器也听配置;风险=0.11→0.12 API 若不兼容需排查适配。次日新会话再评估。
+
+### 问题/根因(原始)
 
 ### 问题/根因
 便携包每次推理都重新下载模型。根因:模型根路径 = `base_util::project::root_path()/models/<kind>/<name>`
@@ -297,4 +320,7 @@ favicon 能命中 handler)。
 - 风险:下载需异步 + 进度;路径未设时推理要拦截并提示去模型页设置;hash 校验沿用现有 `failure()`。
 
 ### 现状提示
-此项为**独立工作流,未排期、未开工**;先继续 P3(P3b→P3c→P3d),M1 待用户另行安排。
+M1a 已完成(未目检,已 commit)。下一步:M1b(状态表+一键下载)与可选 M1c(patch 统一翻译器模型)。
+M1b 实现要点(开工时细化):给 `Model` trait 加 `files() -> Vec<(key,file)>`(22 模块各声明,默认空)→
+逐文件用 `failure()` 判断已下载/缺失;新增 IPC `GetModelsStatus`/`DownloadModels`(异步+progress);
+前端在模型面板 `#modelsStatus` 渲染状态表 + 下载按钮;启动自动下载读 `models.json.auto_download`。

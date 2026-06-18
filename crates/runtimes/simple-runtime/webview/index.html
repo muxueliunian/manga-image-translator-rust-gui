@@ -36,6 +36,7 @@
       <div class="toolbar-sep" aria-hidden="true"></div>
 
       <div class="toolbar-group" aria-label="Config">
+        <button id="openModels" class="ghost-button" type="button" data-i18n="modelsBtn">模型</button>
         <button id="reloadDefaults" class="ghost-button" type="button" data-i18n="reloadDefaults">默认值</button>
         <button id="loadConfig" class="ghost-button" type="button" data-i18n="loadConfig">加载</button>
         <button id="saveConfig" class="ghost-button" type="button" data-i18n="saveConfig">保存</button>
@@ -500,6 +501,31 @@
           </details>
         </div>
       </aside>
+    </div>
+
+    <!-- ───────────────────────── MODELS MODAL (M1) ───────────────────────── -->
+    <div class="modal-overlay" id="modelsModal" hidden>
+      <div class="modal-panel" role="dialog" aria-modal="true" aria-labelledby="modelsModalTitle">
+        <div class="modal-head">
+          <h2 id="modelsModalTitle" data-i18n="modelsTitle">模型管理</h2>
+          <button id="closeModels" class="ghost-button" type="button" data-i18n="close">关闭</button>
+        </div>
+        <div class="modal-body">
+          <label class="field">
+            <span data-i18n="modelDir">模型目录</span>
+            <div class="path-picker">
+              <input id="modelDir" type="text" readonly data-i18n-placeholder="modelDirUnset" placeholder="未设置（请选择仓库外的文件夹）">
+              <button id="pickModelDir" type="button" class="secondary-button" data-i18n="chooseDir">选择目录</button>
+            </div>
+            <small class="model-hint" data-i18n="modelDirHint"></small>
+          </label>
+          <label class="check-field">
+            <input id="autoDownload" type="checkbox">
+            <span data-i18n="autoDownload">启动时自动下载缺失模型</span>
+          </label>
+          <div id="modelsStatus" class="models-status"></div>
+        </div>
+      </div>
     </div>
   </main>
 

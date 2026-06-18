@@ -22,6 +22,7 @@ interface-inpainter.workspace = true
 interface-image.workspace = true
 interface-ocr.workspace = true
 interface-translator.workspace = true
+interface-model.workspace = true
 log.workspace = true
 semver.workspace = true
 ctc-48px.workspace = true

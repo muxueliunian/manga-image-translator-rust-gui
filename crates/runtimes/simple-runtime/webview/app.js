@@ -68,6 +68,14 @@ const i18n = {
     reloadDefaults: "默认值",
     loadConfig: "加载",
     saveConfig: "保存",
+    modelsBtn: "模型",
+    modelsTitle: "模型管理",
+    modelDir: "模型目录",
+    modelDirUnset: "未设置（请选择仓库外的文件夹）",
+    modelDirHint: "便携包每次重建会清空内置目录，导致重复下载。请选择一个仓库外的固定文件夹长期存放模型。未设置时无法下载或翻译。",
+    chooseDir: "选择目录",
+    autoDownload: "启动时自动下载缺失模型",
+    close: "关闭",
     tabTranslation: "翻译",
     tabDetectionOcr: "检测 / OCR",
     tabInpaintMask: "修补 / Mask",
@@ -238,6 +246,14 @@ const i18n = {
     reloadDefaults: "Defaults",
     loadConfig: "Load",
     saveConfig: "Save",
+    modelsBtn: "Models",
+    modelsTitle: "Model Management",
+    modelDir: "Model Directory",
+    modelDirUnset: "Not set (choose a folder outside the repo)",
+    modelDirHint: "The portable package wipes its bundled folder on every rebuild, causing repeated downloads. Pick a fixed folder outside the repo to store models. Downloading and translating are blocked until this is set.",
+    chooseDir: "Choose Folder",
+    autoDownload: "Auto-download missing models on startup",
+    close: "Close",
     tabTranslation: "Translation",
     tabDetectionOcr: "Detection / OCR",
     tabInpaintMask: "Inpaint / Mask",
@@ -479,6 +495,13 @@ const els = {
   reloadDefaults: document.getElementById("reloadDefaults"),
   loadConfig: document.getElementById("loadConfig"),
   saveConfig: document.getElementById("saveConfig"),
+  openModels: document.getElementById("openModels"),
+  modelsModal: document.getElementById("modelsModal"),
+  closeModels: document.getElementById("closeModels"),
+  modelDir: document.getElementById("modelDir"),
+  pickModelDir: document.getElementById("pickModelDir"),
+  autoDownload: document.getElementById("autoDownload"),
+  modelsStatus: document.getElementById("modelsStatus"),
   startTranslation: document.getElementById("startTranslation"),
   statusTitle: document.getElementById("statusTitle"),
   statusText: document.getElementById("statusText"),
@@ -2065,6 +2088,43 @@ function initResultsResizer() {
   });
 }
 
+// ── Model management modal (M1) ──
+async function openModelsModal() {
+  try {
+    applyModelsConfig(await invoke("getModelsConfig"));
+  } catch (err) {
+    addLog("error", err.message);
+  }
+  els.modelsModal.hidden = false;
+}
+
+function closeModelsModal() {
+  els.modelsModal.hidden = true;
+}
+
+function applyModelsConfig(cfg) {
+  els.modelDir.value = (cfg && cfg.model_dir) || "";
+  els.autoDownload.checked = Boolean(cfg && cfg.auto_download);
+}
+
+async function pickModelDir() {
+  try {
+    const cfg = await invoke("setModelsDir");
+    applyModelsConfig(cfg);
+    if (cfg && cfg.model_dir) addLog("success", `${t("modelDir")}: ${cfg.model_dir}`);
+  } catch (err) {
+    addLog("error", err.message);
+  }
+}
+
+async function setAutoDownload(value) {
+  try {
+    await invoke("setAutoDownload", { value });
+  } catch (err) {
+    addLog("error", err.message);
+  }
+}
+
 async function bootstrap() {
   applyTheme(state.theme);
   applyLang();
@@ -2089,6 +2149,13 @@ async function bootstrap() {
   els.reloadDefaults.addEventListener("click", loadDefaults);
   els.loadConfig.addEventListener("click", loadConfig);
   els.saveConfig.addEventListener("click", saveConfig);
+  els.openModels.addEventListener("click", openModelsModal);
+  els.closeModels.addEventListener("click", closeModelsModal);
+  els.pickModelDir.addEventListener("click", pickModelDir);
+  els.autoDownload.addEventListener("change", () => setAutoDownload(els.autoDownload.checked));
+  els.modelsModal.addEventListener("click", (event) => {
+    if (event.target === els.modelsModal) closeModelsModal();
+  });
   els.cudaErrorToggle.addEventListener("click", () => {
     state.cudaErrorExpanded = !state.cudaErrorExpanded;
     els.cudaErrorDetail.classList.toggle("hidden", !state.cudaErrorExpanded);
@@ -2211,7 +2278,10 @@ async function bootstrap() {
   // Dismiss the context menu on any outside interaction.
   document.addEventListener("click", () => closeTreeContextMenu());
   document.addEventListener("keydown", (event) => {
-    if (event.key === "Escape") closeTreeContextMenu();
+    if (event.key === "Escape") {
+      closeTreeContextMenu();
+      closeModelsModal();
+    }
   });
   window.addEventListener("blur", () => closeTreeContextMenu());
   els.inputList.addEventListener("scroll", () => closeTreeContextMenu());

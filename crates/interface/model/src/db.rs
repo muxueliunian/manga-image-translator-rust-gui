@@ -2,14 +2,50 @@ use std::{
     fs::{self, read_dir, read_to_string, File, OpenOptions},
     io::{BufReader, Read, Seek as _, Write as _},
     path::{Component, Path, PathBuf},
+    sync::RwLock,
 };
 
+use anyhow::anyhow;
 use base_util::project::root_path;
 use flate2::read::GzDecoder;
 use indicatif::{ProgressBar, ProgressStyle};
 use log::{debug, info};
 use sha2::{Digest, Sha256};
 use tar::Archive;
+
+/// How the on-disk model root is resolved. Defaults to the legacy
+/// `root_path()/models` so the egui UI / CLI / tests keep working; the portable
+/// WebView sets it explicitly (a configured external folder, or "require" so an
+/// unset path errors instead of silently downloading into the wiped dist dir).
+#[derive(Clone, Debug)]
+pub enum ModelRootMode {
+    Default,
+    Configured(PathBuf),
+    RequireConfigured,
+}
+
+static MODEL_ROOT: RwLock<ModelRootMode> = RwLock::new(ModelRootMode::Default);
+
+pub fn set_model_root(mode: ModelRootMode) {
+    if let Ok(mut guard) = MODEL_ROOT.write() {
+        *guard = mode;
+    }
+}
+
+/// The directory that holds `<kind>/<name>/...` model files.
+pub fn model_base_dir() -> anyhow::Result<PathBuf> {
+    let mode = MODEL_ROOT
+        .read()
+        .map_err(|_| anyhow!("model root lock poisoned"))?
+        .clone();
+    match mode {
+        ModelRootMode::Default => Ok(root_path().join("models")),
+        ModelRootMode::Configured(path) => Ok(path),
+        ModelRootMode::RequireConfigured => Err(anyhow!(
+            "模型目录未设置：请在「模型」页选择一个外部文件夹后再下载 / 翻译。"
+        )),
+    }
+}
 
 pub struct ModelDb {}
 
@@ -22,7 +58,7 @@ impl ModelDb {
         url: &str,
         hash: &str,
     ) -> anyhow::Result<PathBuf> {
-        let base_path = root_path().join("models").join(kind).join(name);
+        let base_path = model_base_dir()?.join(kind).join(name);
         let mut file_path = base_path.join(file);
 
         std::fs::create_dir_all(file_path.parent().expect("set above"))?;

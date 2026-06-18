@@ -7,6 +7,8 @@ use tokio::sync::{RwLock, RwLockReadGuard};
 
 pub mod db;
 
+pub use db::{model_base_dir, set_model_root, ModelRootMode};
+
 pub type ModelWrap<T> = Arc<RwLock<Option<T>>>;
 pub struct ModelRead<'a, T> {
     inner: RwLockReadGuard<'a, Option<T>>,
