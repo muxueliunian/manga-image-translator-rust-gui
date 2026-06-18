@@ -129,6 +129,7 @@ const i18n = {
     exportNeedDir: "请先选择导出目录。",
     remove: "删除",
     logTitle: "运行记录",
+    logResizeHint: "拖拽调整运行记录高度",
     clearLog: "清空",
     logEmpty: "暂无日志",
     copy: "复制",
@@ -289,6 +290,7 @@ const i18n = {
     exportNeedDir: "Choose an export directory first.",
     remove: "Remove",
     logTitle: "Run Log",
+    logResizeHint: "Drag to resize the run log",
     clearLog: "Clear",
     logEmpty: "No logs yet",
     copy: "Copy",
@@ -346,6 +348,8 @@ const IMAGE_EXTENSIONS = new Set([
 const LOG_SUMMARY_LIMIT = 140;
 const PATH_DISPLAY_LIMIT = 56;
 const CUDA_SUMMARY_LIMIT = 96;
+const LOG_HEIGHT_KEY = "mitWebviewLogHeight";
+const LOG_HEIGHT_MIN = 92;
 
 const state = {
   lang: localStorage.getItem("mitWebviewLang") || "zh",
@@ -444,6 +448,8 @@ const els = {
   results: document.getElementById("results"),
   logList: document.getElementById("logList"),
   clearLog: document.getElementById("clearLog"),
+  statusbar: document.querySelector(".statusbar"),
+  logResizer: document.getElementById("logResizer"),
 };
 
 window.MIT_BRIDGE = {
@@ -1350,9 +1356,70 @@ async function exportSelectedResults() {
   }
 }
 
+function logHeightMax() {
+  return Math.max(LOG_HEIGHT_MIN, window.innerHeight - 220);
+}
+
+// Apply a status-bar height (which drives the run-log area) via a CSS var,
+// clamped so it never swallows the workspace. Returns the clamped value.
+function applyLogHeight(px) {
+  const clamped = Math.max(LOG_HEIGHT_MIN, Math.min(logHeightMax(), Math.round(px)));
+  document.documentElement.style.setProperty("--statusbar-height", `${clamped}px`);
+  return clamped;
+}
+
+// Drag the top edge of the status bar to resize the run log; persist the height.
+function initLogResizer() {
+  const handle = els.logResizer;
+  const bar = els.statusbar;
+  if (!handle || !bar) return;
+
+  const saved = Number(localStorage.getItem(LOG_HEIGHT_KEY));
+  if (Number.isFinite(saved) && saved > 0) applyLogHeight(saved);
+
+  let startY = 0;
+  let startH = 0;
+  let lastH = 0;
+  let dragging = false;
+
+  const onMove = (event) => {
+    if (!dragging) return;
+    lastH = applyLogHeight(startH + (startY - event.clientY));
+  };
+  const onUp = () => {
+    if (!dragging) return;
+    dragging = false;
+    handle.classList.remove("is-dragging");
+    localStorage.setItem(LOG_HEIGHT_KEY, String(lastH));
+    window.removeEventListener("pointermove", onMove);
+    window.removeEventListener("pointerup", onUp);
+  };
+
+  handle.addEventListener("pointerdown", (event) => {
+    dragging = true;
+    startY = event.clientY;
+    startH = bar.offsetHeight;
+    lastH = startH;
+    handle.classList.add("is-dragging");
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+    event.preventDefault();
+  });
+
+  handle.addEventListener("keydown", (event) => {
+    if (event.key !== "ArrowUp" && event.key !== "ArrowDown") return;
+    event.preventDefault();
+    lastH = applyLogHeight(bar.offsetHeight + (event.key === "ArrowUp" ? 24 : -24));
+    localStorage.setItem(LOG_HEIGHT_KEY, String(lastH));
+  });
+
+  window.addEventListener("resize", () => applyLogHeight(bar.offsetHeight));
+}
+
 async function bootstrap() {
   applyTheme(state.theme);
   applyLang();
+  initLogResizer();
   renderInputList();
   renderLogEmptyState();
 
