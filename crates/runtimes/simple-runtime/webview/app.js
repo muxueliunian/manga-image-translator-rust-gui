@@ -53,6 +53,7 @@ const i18n = {
     maxParallelGpuJobs: "GPU 并发",
     cudaDetails: "详情",
     cudaHide: "收起",
+    themeToggle: "切换深色 / 浅色",
     textDirectionAuto: "自动",
     textDirectionHorizontal: "横排",
     textDirectionVertical: "竖排",
@@ -212,6 +213,7 @@ const i18n = {
     maxParallelGpuJobs: "GPU Concurrency",
     cudaDetails: "Details",
     cudaHide: "Hide",
+    themeToggle: "Toggle dark / light",
     textDirectionAuto: "Auto",
     textDirectionHorizontal: "Horizontal",
     textDirectionVertical: "Vertical",
@@ -347,6 +349,7 @@ const CUDA_SUMMARY_LIMIT = 96;
 
 const state = {
   lang: localStorage.getItem("mitWebviewLang") || "zh",
+  theme: localStorage.getItem("mitWebviewTheme") || "dark",
   inputPaths: [],
   outputDir: "",
   results: [],
@@ -360,6 +363,7 @@ const state = {
 
 const els = {
   langToggle: document.getElementById("langToggle"),
+  themeToggle: document.getElementById("themeToggle"),
   backendBadge: document.getElementById("backendBadge"),
   pickImages: document.getElementById("pickImages"),
   pickFolder: document.getElementById("pickFolder"),
@@ -556,6 +560,13 @@ function refreshGuidance() {
     els.targetLang.disabled = isSugoi;
     els.targetLang.title = isSugoi ? t("targetLangSugoiNote") : "";
   }
+}
+
+function applyTheme(theme) {
+  const normalized = theme === "light" ? "light" : "dark";
+  state.theme = normalized;
+  document.documentElement.dataset.theme = normalized;
+  localStorage.setItem("mitWebviewTheme", normalized);
 }
 
 function applyLang() {
@@ -1340,6 +1351,7 @@ async function exportSelectedResults() {
 }
 
 async function bootstrap() {
+  applyTheme(state.theme);
   applyLang();
   renderInputList();
   renderLogEmptyState();
@@ -1348,6 +1360,9 @@ async function bootstrap() {
     state.lang = state.lang === "zh" ? "en" : "zh";
     localStorage.setItem("mitWebviewLang", state.lang);
     applyLang();
+  });
+  els.themeToggle.addEventListener("click", () => {
+    applyTheme(state.theme === "dark" ? "light" : "dark");
   });
   els.pickImages.addEventListener("click", chooseImages);
   els.pickFolder.addEventListener("click", chooseFolder);
