@@ -11,6 +11,9 @@ const i18n = {
     pathKindFile: "文件",
     pathKindFolder: "文件夹",
     noInput: "尚未添加输入。可多次添加图片或文件夹。",
+    treeEmpty: "尚未导入。点顶部「添加图片 / 添加文件夹」导入。",
+    treeLoading: "正在读取…",
+    treeFolderEmpty: "（无图片）",
     outputGroup: "输出",
     runtimeGroup: "运行",
     outputDir: "导出目录",
@@ -172,6 +175,9 @@ const i18n = {
     pathKindFile: "File",
     pathKindFolder: "Folder",
     noInput: "No input yet. Add images or folders in multiple passes.",
+    treeEmpty: "Nothing imported yet. Use Add Images / Add Folders above.",
+    treeLoading: "Reading…",
+    treeFolderEmpty: "(no images)",
     outputGroup: "Output",
     runtimeGroup: "Runtime",
     outputDir: "Export Directory",
@@ -351,10 +357,17 @@ const CUDA_SUMMARY_LIMIT = 96;
 const LOG_HEIGHT_KEY = "mitWebviewLogHeight";
 const LOG_HEIGHT_MIN = 92;
 
+const ICON_CHEVRON =
+  '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6" /></svg>';
+const ICON_FOLDER =
+  '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7.5A2.5 2.5 0 0 1 5.5 5H10l2 2h6.5A2.5 2.5 0 0 1 21 9.5v7A2.5 2.5 0 0 1 18.5 19h-13A2.5 2.5 0 0 1 3 16.5v-9Z" /></svg>';
+const ICON_FILE =
+  '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M13 3H6.5A1.5 1.5 0 0 0 5 4.5v15A1.5 1.5 0 0 0 6.5 21h11a1.5 1.5 0 0 0 1.5-1.5V9l-6-6Z" /><path d="M13 3v6h6" /></svg>';
+
 const state = {
   lang: localStorage.getItem("mitWebviewLang") || "zh",
   theme: localStorage.getItem("mitWebviewTheme") || "dark",
-  inputPaths: [],
+  tree: [],
   outputDir: "",
   results: [],
   selectedResults: new Set(),
@@ -591,7 +604,7 @@ function applyLang() {
   if (startLabel && !state.isRunning) {
     startLabel.textContent = t("start");
   }
-  renderInputList();
+  renderTree();
   renderResults();
   renderLogEmptyState();
   refreshGuidance();
@@ -631,22 +644,45 @@ function truncateMiddle(text, limit = PATH_DISPLAY_LIMIT) {
   return `${value.slice(0, head)}…${value.slice(-tail)}`;
 }
 
-function classifyInputPath(path) {
-  const name = path.split(/[\\/]/).filter(Boolean).pop() || "";
-  const dot = name.lastIndexOf(".");
-  if (dot <= 0) return "folder";
-  const ext = name.slice(dot).toLowerCase();
-  return IMAGE_EXTENSIONS.has(ext) ? "file" : "folder";
+function pathBaseName(path) {
+  return String(path).split(/[\\/]/).filter(Boolean).pop() || String(path);
+}
+
+function makeNode(path, name, isDir) {
+  return {
+    path,
+    name,
+    isDir,
+    expanded: false,
+    loaded: false,
+    loading: false,
+    children: isDir ? null : undefined,
+  };
+}
+
+function findNode(path, nodes = state.tree) {
+  for (const node of nodes) {
+    if (node.path === path) return node;
+    if (node.children) {
+      const found = findNode(path, node.children);
+      if (found) return found;
+    }
+  }
+  return null;
+}
+
+function rootPaths() {
+  return state.tree.map((node) => node.path);
 }
 
 function countInputKinds() {
   let files = 0;
   let folders = 0;
-  state.inputPaths.forEach((path) => {
-    if (classifyInputPath(path) === "file") files += 1;
-    else folders += 1;
+  state.tree.forEach((node) => {
+    if (node.isDir) folders += 1;
+    else files += 1;
   });
-  return { total: state.inputPaths.length, files, folders };
+  return { total: state.tree.length, files, folders };
 }
 
 function renderInputStats() {
@@ -777,62 +813,109 @@ function updateProgress(payload) {
     total > 0 ? `${message} · ${current}/${total} · ${clamped}%` : message;
 }
 
-function renderInputList() {
+function renderTree() {
   renderInputStats();
   els.inputList.innerHTML = "";
 
-  if (!state.inputPaths.length) {
+  if (!state.tree.length) {
     els.inputList.classList.add("is-empty");
-    els.inputList.textContent = t("noInput");
+    els.inputList.textContent = t("treeEmpty");
     return;
   }
 
   els.inputList.classList.remove("is-empty");
-
-  state.inputPaths.forEach((path, index) => {
-    const kind = classifyInputPath(path);
-    const name = path.split(/[\\/]/).filter(Boolean).pop() || path;
-    const item = document.createElement("div");
-    item.className = "path-item";
-    item.innerHTML = `
-      <div class="path-text">
-        <span class="path-kind">${escapeHtml(t(kind === "file" ? "pathKindFile" : "pathKindFolder"))}</span>
-        <strong title="${escapeAttr(path)}">${escapeHtml(truncateMiddle(name, 36))}</strong>
-      </div>
-      <button class="tiny-button" type="button" data-remove-input="${index}">${escapeHtml(t("remove"))}</button>
-    `;
-    const strong = item.querySelector("strong");
-    if (strong) strong.title = path;
-    els.inputList.append(item);
-  });
+  const root = document.createElement("div");
+  root.className = "tree";
+  state.tree.forEach((node) => root.append(renderNode(node, 0, true)));
+  els.inputList.append(root);
 }
 
-function addInputPaths(paths) {
-  const before = state.inputPaths.length;
-  const seen = new Set(state.inputPaths.map((path) => normalizePathKey(path)));
+function renderNode(node, depth, isRoot) {
+  const wrap = document.createElement("div");
+  wrap.className = "tree-node";
+  wrap.style.setProperty("--depth", String(depth));
+
+  const row = document.createElement("div");
+  row.className = "tree-row";
+  row.dataset.path = node.path;
+  row.title = node.path;
+
+  const chevron = node.isDir
+    ? `<span class="tree-chevron${node.expanded ? " is-open" : ""}" data-action="toggle">${ICON_CHEVRON}</span>`
+    : '<span class="tree-chevron is-leaf"></span>';
+  const icon = `<span class="tree-icon">${node.isDir ? ICON_FOLDER : ICON_FILE}</span>`;
+  const name = `<span class="tree-name"${node.isDir ? ' data-action="toggle"' : ""}>${escapeHtml(node.name)}</span>`;
+  const remove = isRoot
+    ? `<button type="button" class="tiny-button tree-remove" data-action="remove">${escapeHtml(t("remove"))}</button>`
+    : "";
+  row.innerHTML = chevron + icon + name + remove;
+  wrap.append(row);
+
+  if (node.isDir && node.expanded) {
+    const childWrap = document.createElement("div");
+    childWrap.className = "tree-children";
+    if (node.loading) {
+      childWrap.innerHTML = `<div class="tree-hint">${escapeHtml(t("treeLoading"))}</div>`;
+    } else if (node.loaded && node.children && node.children.length) {
+      node.children.forEach((child) => childWrap.append(renderNode(child, depth + 1, false)));
+    } else if (node.loaded) {
+      childWrap.innerHTML = `<div class="tree-hint">${escapeHtml(t("treeFolderEmpty"))}</div>`;
+    }
+    wrap.append(childWrap);
+  }
+  return wrap;
+}
+
+async function toggleNode(node) {
+  if (!node.isDir) return;
+  node.expanded = !node.expanded;
+  if (node.expanded && !node.loaded && !node.loading) {
+    node.loading = true;
+    renderTree();
+    try {
+      const data = await invoke("listDir", { path: node.path });
+      node.children = (data.entries || []).map((entry) =>
+        makeNode(entry.path, entry.name, entry.is_dir),
+      );
+      node.loaded = true;
+    } catch (err) {
+      node.expanded = false;
+      addLog("error", err.message);
+    } finally {
+      node.loading = false;
+      renderTree();
+    }
+  } else {
+    renderTree();
+  }
+}
+
+function addRoots(paths, isDir) {
+  const before = state.tree.length;
+  const seen = new Set(state.tree.map((node) => normalizePathKey(node.path)));
   (paths || []).forEach((path) => {
     if (!path) return;
     const key = normalizePathKey(path);
     if (seen.has(key)) return;
     seen.add(key);
-    state.inputPaths.push(path);
+    state.tree.push(makeNode(path, pathBaseName(path), isDir));
   });
-  return state.inputPaths.length - before;
+  return state.tree.length - before;
 }
 
 function normalizePathKey(path) {
   return String(path || "").trim().replaceAll("\\", "/").toLowerCase();
 }
 
-function removeInput(index) {
-  state.inputPaths.splice(index, 1);
-  renderInputList();
-  setStatus(t("selected"), `${state.inputPaths.length} ${t("selected")}`);
+function removeRoot(path) {
+  state.tree = state.tree.filter((node) => node.path !== path);
+  renderTree();
+  setStatus(t("selected"), `${state.tree.length} ${t("selected")}`);
 }
 
 function clearInputs() {
-  state.inputPaths = [];
-  renderInputList();
+  state.tree = [];
+  renderTree();
   setStatus(t("readyTitle"), t("readyText"));
 }
 
@@ -875,10 +958,10 @@ async function chooseImages() {
   try {
     setStatus(t("starting"), t("openingImages"));
     const data = await invoke("pickImages");
-    const added = addInputPaths(data.paths || []);
-    renderInputList();
-    setStatus(t("selected"), `${state.inputPaths.length} ${t("selected")}`);
-    addLog("info", `${t("added")}: ${added}; ${t("selected")}: ${state.inputPaths.length}`);
+    const added = addRoots(data.paths || [], false);
+    renderTree();
+    setStatus(t("selected"), `${state.tree.length} ${t("selected")}`);
+    addLog("info", `${t("added")}: ${added}; ${t("selected")}: ${state.tree.length}`);
   } catch (err) {
     addLog("error", err.message);
   }
@@ -888,10 +971,10 @@ async function chooseFolder() {
   try {
     setStatus(t("starting"), t("openingFolder"));
     const data = await invoke("pickFolder");
-    const added = addInputPaths(data.paths || []);
-    renderInputList();
-    setStatus(t("folderSelected"), `${state.inputPaths.length} ${t("selected")}`);
-    addLog("info", `${t("folderSelected")}: ${t("added")} ${added}; ${t("selected")}: ${state.inputPaths.length}`);
+    const added = addRoots(data.paths || [], true);
+    renderTree();
+    setStatus(t("folderSelected"), `${state.tree.length} ${t("selected")}`);
+    addLog("info", `${t("folderSelected")}: ${t("added")} ${added}; ${t("selected")}: ${state.tree.length}`);
   } catch (err) {
     addLog("error", err.message);
   }
@@ -1204,12 +1287,13 @@ async function startTranslation() {
     return;
   }
 
+  const inputs = rootPaths();
   try {
     setRunningState(true);
-    updateProgress({ current: 0, total: state.inputPaths.length || 1, message: t("progressPreparing") });
+    updateProgress({ current: 0, total: inputs.length || 1, message: t("progressPreparing") });
     setStatus(t("starting"), t("backendPending"));
     const result = await invoke("startTranslation", {
-      input_paths: state.inputPaths,
+      input_paths: inputs,
       settings,
       output_format: els.outputFormat.value,
       require_cuda: els.requireCuda.checked,
@@ -1420,7 +1504,7 @@ async function bootstrap() {
   applyTheme(state.theme);
   applyLang();
   initLogResizer();
-  renderInputList();
+  renderTree();
   renderLogEmptyState();
 
   els.langToggle.addEventListener("click", () => {
@@ -1518,10 +1602,17 @@ async function bootstrap() {
   els.selectAllResults.addEventListener("click", toggleAllResults);
   els.exportSelected.addEventListener("click", exportSelectedResults);
   els.inputList.addEventListener("click", (event) => {
-    const removeIndex = event.target?.dataset?.removeInput;
-    if (removeIndex !== undefined) {
-      removeInput(Number(removeIndex));
+    const row = event.target.closest(".tree-row");
+    if (!row) return;
+    const node = findNode(row.dataset.path);
+    if (!node) return;
+    const action = event.target.closest("[data-action]")?.dataset.action;
+    if (action === "remove") {
+      removeRoot(node.path);
+    } else if (action === "toggle" || node.isDir) {
+      toggleNode(node);
     }
+    // File-row click → canvas preview arrives in P3b.
   });
   els.results.addEventListener("click", (event) => {
     const previewIndex = event.target?.dataset?.previewIndex;
