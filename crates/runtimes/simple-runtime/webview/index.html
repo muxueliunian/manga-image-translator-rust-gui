@@ -473,23 +473,23 @@
 
     <!-- ───────────────────────── STATUS BAR ───────────────────────── -->
     <footer class="statusbar">
-      <div class="statusbar-info">
-        <strong id="statusTitle" data-i18n="readyTitle">准备就绪</strong>
-        <span id="statusText" data-i18n="readyText">选择输入与输出目录后即可开始。</span>
-      </div>
-      <div class="progress-wrap" aria-live="polite">
-        <div class="progress-track">
-          <div id="progressBar" class="progress-bar"></div>
+      <div class="statusbar-resizer" id="logResizer" data-i18n-title="logResizeHint" role="separator" aria-orientation="horizontal" tabindex="0"></div>
+      <div class="statusbar-top">
+        <div class="statusbar-info">
+          <strong id="statusTitle" data-i18n="readyTitle">准备就绪</strong>
+          <span id="statusText" data-i18n="readyText">选择输入与输出目录后即可开始。</span>
         </div>
-        <span id="progressLabel" data-i18n="progressIdle">等待任务</span>
-      </div>
-      <div class="statusbar-log">
-        <div class="statusbar-log-head">
-          <h2 data-i18n="logTitle">运行记录</h2>
-          <button id="clearLog" class="ghost-button" type="button" data-i18n="clearLog">清空</button>
+        <div class="progress-wrap" aria-live="polite">
+          <div class="progress-track">
+            <div id="progressBar" class="progress-bar"></div>
+          </div>
+          <span id="progressLabel" data-i18n="progressIdle">等待任务</span>
         </div>
-        <div id="logList" class="log-list" aria-live="polite"></div>
+        <div class="statusbar-top-spacer"></div>
+        <h2 class="statusbar-log-title" data-i18n="logTitle">运行记录</h2>
+        <button id="clearLog" class="ghost-button" type="button" data-i18n="clearLog">清空</button>
       </div>
+      <div id="logList" class="log-list" aria-live="polite"></div>
     </footer>
   </main>
 

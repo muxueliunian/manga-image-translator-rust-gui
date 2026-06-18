@@ -1234,14 +1234,40 @@ svg {
   overflow: visible;
 }
 
-/* ── Status bar ── */
+/* ── Status bar: top status row + full-width resizable run log (P2.5) ── */
 .statusbar {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  height: var(--statusbar-height, 150px);
+  min-height: 92px;
+  border-top: 1px solid var(--line);
+  background: var(--surface);
+}
+
+/* Drag handle straddling the top edge; raises the bar to grow the log. */
+.statusbar-resizer {
+  position: absolute;
+  top: -3px;
+  left: 0;
+  right: 0;
+  height: 7px;
+  cursor: ns-resize;
+  z-index: 5;
+}
+
+.statusbar-resizer:hover,
+.statusbar-resizer.is-dragging {
+  background: var(--accent-soft);
+}
+
+.statusbar-top {
+  flex: 0 0 auto;
   display: flex;
   align-items: center;
   gap: var(--space-4);
   padding: 6px var(--space-3);
-  border-top: 1px solid var(--line);
-  background: var(--surface);
+  border-bottom: 1px solid var(--line);
 }
 
 .statusbar-info {
@@ -1276,22 +1302,11 @@ svg {
   font-size: 10px;
 }
 
-.statusbar-log {
-  display: flex;
-  flex-direction: column;
-  flex: 1;
-  min-width: 0;
-  gap: 4px;
+.statusbar-top-spacer {
+  flex: 1 1 auto;
 }
 
-.statusbar-log-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-2);
-}
-
-.statusbar-log-head h2 {
+.statusbar-log-title {
   margin: 0;
   font-size: 11px;
   font-weight: 600;
@@ -1301,7 +1316,10 @@ svg {
 }
 
 .statusbar .log-list {
-  height: 56px;
+  flex: 1;
+  min-height: 0;
+  height: auto;
+  padding: 6px var(--space-3);
 }
 
 /* ── Inspector accordion (P2): PS-style dockable property groups ── */
