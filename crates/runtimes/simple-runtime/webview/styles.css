@@ -1396,6 +1396,86 @@ svg {
   display: block;
 }
 
+/* ── Filmstrip file tree (P3a): VSCode-style recursive list ── */
+.tree {
+  display: flex;
+  flex-direction: column;
+}
+
+.tree-node {
+  --depth: 0;
+}
+
+.tree-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 26px;
+  padding: 2px 6px 2px calc(6px + var(--depth, 0) * 14px);
+  border-radius: var(--radius-sm);
+  cursor: default;
+  user-select: none;
+}
+
+.tree-row:hover {
+  background: var(--surface-muted);
+}
+
+.tree-chevron {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  color: var(--muted);
+  transition: transform 120ms ease;
+}
+
+.tree-chevron svg {
+  width: 12px;
+  height: 12px;
+}
+
+.tree-chevron.is-open {
+  transform: rotate(90deg);
+}
+
+.tree-chevron.is-leaf {
+  visibility: hidden;
+}
+
+.tree-icon {
+  flex: 0 0 auto;
+  display: inline-flex;
+  color: var(--muted);
+}
+
+.tree-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  color: var(--text);
+}
+
+.tree-remove {
+  flex: 0 0 auto;
+  opacity: 0;
+}
+
+.tree-row:hover .tree-remove {
+  opacity: 1;
+}
+
+.tree-hint {
+  padding: 2px 6px 2px calc(6px + (var(--depth, 0) + 1) * 14px);
+  color: var(--muted);
+  font-size: 11px;
+}
+
 /* Narrow windows (min 960): collapse the inspector to keep the canvas usable. */
 @media (max-width: 1080px) {
   .workspace {

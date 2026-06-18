@@ -70,6 +70,7 @@ enum IpcKind {
     StartTranslation,
     PreviewResult,
     ExportResults,
+    ListDir,
 }
 
 #[derive(Debug, Serialize)]
@@ -160,6 +161,24 @@ struct ExportResultsPayload {
 #[derive(Serialize)]
 struct ExportResultsData {
     exported: Vec<String>,
+}
+
+#[derive(Deserialize)]
+struct ListDirPayload {
+    path: PathBuf,
+}
+
+#[derive(Serialize)]
+struct DirEntryInfo {
+    name: String,
+    path: String,
+    is_dir: bool,
+    is_image: bool,
+}
+
+#[derive(Serialize)]
+struct ListDirData {
+    entries: Vec<DirEntryInfo>,
 }
 
 fn default_max_parallel_images() -> usize {
@@ -357,8 +376,48 @@ fn handle_ipc_request(request: &IpcRequest) -> Result<serde_json::Value> {
                 .map_err(|err| anyhow!("Invalid export payload: {err}"))?;
             export_results(&payload.outputs, &payload.export_dir).and_then(to_value)
         }
+        IpcKind::ListDir => {
+            let payload = serde_json::from_value::<ListDirPayload>(request.payload.clone())
+                .map_err(|err| anyhow!("Invalid listDir payload: {err}"))?;
+            to_value(list_dir(&payload.path)?)
+        }
         IpcKind::StartTranslation => unreachable!("handled asynchronously"),
     }
+}
+
+/// List the immediate children of `path` for the left-panel file tree:
+/// directories (kept for further browsing) plus supported image files only.
+/// Directories first, then files, each sorted case-insensitively by name.
+fn list_dir(path: &Path) -> Result<ListDirData> {
+    let mut dirs = Vec::new();
+    let mut files = Vec::new();
+    for entry in std::fs::read_dir(path)? {
+        let entry = entry?;
+        let entry_path = entry.path();
+        let name = entry.file_name().to_string_lossy().to_string();
+        let file_type = entry.file_type()?;
+        if file_type.is_dir() {
+            dirs.push(DirEntryInfo {
+                name,
+                path: entry_path.display().to_string(),
+                is_dir: true,
+                is_image: false,
+            });
+        } else if file_type.is_file() && is_supported_image(&entry_path) {
+            files.push(DirEntryInfo {
+                name,
+                path: entry_path.display().to_string(),
+                is_dir: false,
+                is_image: true,
+            });
+        }
+    }
+    let by_name =
+        |a: &DirEntryInfo, b: &DirEntryInfo| a.name.to_lowercase().cmp(&b.name.to_lowercase());
+    dirs.sort_by(by_name);
+    files.sort_by(by_name);
+    dirs.extend(files);
+    Ok(ListDirData { entries: dirs })
 }
 
 fn handle_start_translation(
