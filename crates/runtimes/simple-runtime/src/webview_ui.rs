@@ -12,10 +12,10 @@ use anyhow::{anyhow, Result};
 use rfd::FileDialog;
 use serde::{Deserialize, Serialize};
 use tao::{
-    dpi::LogicalSize,
+    dpi::{LogicalSize, PhysicalPosition, PhysicalSize},
     event::{Event, StartCause, WindowEvent},
     event_loop::{ControlFlow, EventLoopBuilder},
-    window::WindowBuilder,
+    window::{Window, WindowBuilder},
 };
 use tokio::sync::{Mutex as AsyncMutex, Semaphore};
 use wry::http::{header::CONTENT_TYPE, Response};
@@ -175,11 +175,29 @@ pub fn run() -> Result<()> {
     let proxy = event_loop.create_proxy();
     let ipc_proxy = proxy.clone();
     let models: ModelPool = Arc::new(AsyncMutex::new(None));
-    let window = WindowBuilder::new()
+    let saved_window = load_window_state();
+    let mut window_builder = WindowBuilder::new()
         .with_title("漫画图片翻译器")
-        .with_inner_size(LogicalSize::new(1180.0, 780.0))
-        .with_min_inner_size(LogicalSize::new(960.0, 640.0))
-        .build(&event_loop)?;
+        .with_min_inner_size(LogicalSize::new(960.0, 640.0));
+    match saved_window
+        .as_ref()
+        .filter(|state| state.width >= 320 && state.height >= 240)
+    {
+        Some(state) => {
+            window_builder =
+                window_builder.with_inner_size(PhysicalSize::new(state.width, state.height));
+            if let (Some(x), Some(y)) = (state.x, state.y) {
+                window_builder = window_builder.with_position(PhysicalPosition::new(x, y));
+            }
+        }
+        None => {
+            window_builder = window_builder.with_inner_size(LogicalSize::new(1180.0, 780.0));
+        }
+    }
+    let window = window_builder.build(&event_loop)?;
+    if saved_window.map(|state| state.maximized).unwrap_or(false) {
+        window.set_maximized(true);
+    }
 
     let webview = WebViewBuilder::new()
         .with_custom_protocol("mit".into(), move |_webview_id, _request| {
@@ -225,6 +243,7 @@ pub fn run() -> Result<()> {
                 event: WindowEvent::CloseRequested,
                 ..
             } => {
+                save_window_state_from(&window);
                 *control_flow = ControlFlow::Exit;
             }
             _ => {}
@@ -398,6 +417,57 @@ fn save_settings(settings: &Settings) -> Result<()> {
     let content = serde_json::to_string_pretty(settings)?;
     File::create(path)?.write_all(content.as_bytes())?;
     Ok(())
+}
+
+/// Persisted native window geometry so the app reopens at the user's last
+/// size, position and maximized state instead of the hardcoded default.
+#[derive(Debug, Serialize, Deserialize)]
+struct WindowState {
+    width: u32,
+    height: u32,
+    #[serde(default)]
+    x: Option<i32>,
+    #[serde(default)]
+    y: Option<i32>,
+    #[serde(default)]
+    maximized: bool,
+}
+
+fn window_state_path() -> PathBuf {
+    std::env::current_dir()
+        .unwrap_or_else(|_| PathBuf::from("."))
+        .join("config")
+        .join("window.json")
+}
+
+fn load_window_state() -> Option<WindowState> {
+    let content = read_to_string(window_state_path()).ok()?;
+    serde_json::from_str::<WindowState>(&content).ok()
+}
+
+fn save_window_state(state: &WindowState) -> Result<()> {
+    let path = window_state_path();
+    if let Some(parent) = path.parent() {
+        create_dir_all(parent)?;
+    }
+    let content = serde_json::to_string_pretty(state)?;
+    File::create(path)?.write_all(content.as_bytes())?;
+    Ok(())
+}
+
+fn save_window_state_from(window: &Window) {
+    let size = window.inner_size();
+    let position = window.outer_position().ok();
+    let state = WindowState {
+        width: size.width,
+        height: size.height,
+        x: position.map(|p| p.x),
+        y: position.map(|p| p.y),
+        maximized: window.is_maximized(),
+    };
+    if let Err(err) = save_window_state(&state) {
+        eprintln!("Failed to persist window state: {err}");
+    }
 }
 
 fn validate_translation_payload(payload: &StartTranslationPayload) -> Result<()> {
