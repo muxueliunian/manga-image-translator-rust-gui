@@ -9,6 +9,7 @@ use std::{
 };
 
 use anyhow::{anyhow, Result};
+use interface_model::{set_model_root, ModelRootMode};
 use rfd::FileDialog;
 use serde::{Deserialize, Serialize};
 use tao::{
@@ -73,6 +74,9 @@ enum IpcKind {
     ListDir,
     ReadImage,
     RevealInExplorer,
+    GetModelsConfig,
+    SetModelsDir,
+    SetAutoDownload,
 }
 
 #[derive(Debug, Serialize)]
@@ -180,6 +184,21 @@ struct RevealInExplorerPayload {
     path: PathBuf,
 }
 
+/// Persisted model-management config (`config/models.json`). Kept separate from
+/// the translation `app.json` since the model root is an environment concern.
+#[derive(Debug, Default, Serialize, Deserialize)]
+struct ModelsConfig {
+    #[serde(default)]
+    model_dir: Option<String>,
+    #[serde(default)]
+    auto_download: bool,
+}
+
+#[derive(Deserialize)]
+struct SetAutoDownloadPayload {
+    value: bool,
+}
+
 #[derive(Serialize)]
 struct DirEntryInfo {
     name: String,
@@ -202,6 +221,8 @@ fn default_max_parallel_gpu_jobs() -> usize {
 }
 
 pub fn run() -> Result<()> {
+    // Resolve the model root from config before anything can trigger a download.
+    apply_models_config(&load_models_config());
     let event_loop = EventLoopBuilder::<UserEvent>::with_user_event().build();
     let proxy = event_loop.create_proxy();
     let ipc_proxy = proxy.clone();
@@ -463,6 +484,24 @@ fn handle_ipc_request(request: &IpcRequest) -> Result<serde_json::Value> {
                 "path": payload.path.display().to_string(),
             }))
         }
+        IpcKind::GetModelsConfig => to_value(load_models_config()),
+        IpcKind::SetModelsDir => {
+            let mut config = load_models_config();
+            if let Some(dir) = FileDialog::new().set_title("选择模型目录").pick_folder() {
+                config.model_dir = Some(dir.display().to_string());
+                save_models_config(&config)?;
+                apply_models_config(&config);
+            }
+            to_value(config)
+        }
+        IpcKind::SetAutoDownload => {
+            let payload = serde_json::from_value::<SetAutoDownloadPayload>(request.payload.clone())
+                .map_err(|err| anyhow!("Invalid setAutoDownload payload: {err}"))?;
+            let mut config = load_models_config();
+            config.auto_download = payload.value;
+            save_models_config(&config)?;
+            to_value(config)
+        }
         IpcKind::StartTranslation => unreachable!("handled asynchronously"),
     }
 }
@@ -548,6 +587,42 @@ fn load_saved_settings() -> Result<Settings> {
     let path = config_path();
     let content = read_to_string(&path)?;
     serde_json::from_str(&content).map_err(Into::into)
+}
+
+fn models_config_path() -> PathBuf {
+    std::env::current_dir()
+        .unwrap_or_else(|_| PathBuf::from("."))
+        .join("config")
+        .join("models.json")
+}
+
+fn load_models_config() -> ModelsConfig {
+    read_to_string(models_config_path())
+        .ok()
+        .and_then(|content| serde_json::from_str(&content).ok())
+        .unwrap_or_default()
+}
+
+fn save_models_config(config: &ModelsConfig) -> Result<()> {
+    let path = models_config_path();
+    if let Some(parent) = path.parent() {
+        create_dir_all(parent)?;
+    }
+    let content = serde_json::to_string_pretty(config)?;
+    File::create(path)?.write_all(content.as_bytes())?;
+    Ok(())
+}
+
+/// Push the configured model dir into the global root. A set, non-empty dir is
+/// used as-is; otherwise the WebView requires an explicit choice (errors on
+/// download/inference) rather than falling back to the wiped portable dir.
+fn apply_models_config(config: &ModelsConfig) {
+    match config.model_dir.as_deref().map(str::trim) {
+        Some(dir) if !dir.is_empty() => {
+            set_model_root(ModelRootMode::Configured(PathBuf::from(dir)));
+        }
+        _ => set_model_root(ModelRootMode::RequireConfigured),
+    }
 }
 
 fn save_settings(settings: &Settings) -> Result<()> {
