@@ -1,23 +1,57 @@
 :root {
-  color-scheme: light;
-  --bg: #f7f7f5;
-  --surface: #ffffff;
-  --surface-muted: #f3f4f2;
-  --text: #1f2328;
-  --muted: #6b7280;
-  --line: #e4e6e3;
-  --line-strong: #c9cec8;
-  --accent: #3d6f6a;
-  --accent-strong: #2d5551;
-  --accent-soft: #e8f0ef;
-  --success: #2f6b4f;
-  --success-soft: #edf5f0;
-  --warn: #8a6b2c;
-  --warn-soft: #faf5ea;
-  --danger: #9b4a42;
-  --danger-soft: #fdf0ee;
-  --info-soft: #f0f3f8;
-  font-family: Inter, "Segoe UI", "Microsoft YaHei", "PingFang SC", Arial, sans-serif;
+  color-scheme: dark;
+
+  /* Surfaces — graphite "darkroom" shell that recedes so the manga page is the
+     only bright thing on screen. */
+  --bg: #16181c;
+  --surface: #1e2024;
+  --surface-muted: #26292f;
+  --surface-raised: #2a2d32;
+  --line: #34383f;
+  --line-strong: #434852;
+
+  /* Text */
+  --text: #e6e7e9;
+  --muted: #8a8f98;
+
+  /* Single accent — 朱 / 印泥红, used only for active state, progress and
+     (later) the translation overlay highlight. */
+  --accent: #c8453b;
+  --accent-strong: #d85a50;
+  --accent-soft: #2e2120;
+  --on-accent: #ffffff;
+  --focus-ring: rgba(216, 90, 80, 0.5);
+
+  /* Status — dark-tuned */
+  --success: #6fca94;
+  --success-soft: #1b2620;
+  --success-line: #2f5a44;
+  --warn: #d6a95c;
+  --warn-soft: #29241a;
+  --warn-line: #5a4c2e;
+  --danger: #e8736a;
+  --danger-soft: #2a1d1c;
+  --danger-line: #5a3733;
+  --info-soft: #1c2128;
+  --info-line: #3a4452;
+
+  /* Type — UI grotesque + monospace for numeric HUD/data readouts */
+  --font-ui: Inter, "Segoe UI", "Microsoft YaHei", "PingFang SC", Arial, sans-serif;
+  --font-mono: "Cascadia Mono", Consolas, ui-monospace, monospace;
+
+  /* Spacing scale */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+
+  /* Radius + elevation */
+  --radius: 4px;
+  --radius-sm: 3px;
+  --radius-pill: 999px;
+  --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.35);
+
+  font-family: var(--font-ui);
 }
 
 * {
@@ -26,7 +60,8 @@
 
 body {
   margin: 0;
-  min-width: 1100px;
+  height: 100vh;
+  overflow: hidden;
   background: var(--bg);
   color: var(--text);
   font-size: 13px;
@@ -49,7 +84,7 @@ button:focus-visible,
 input:focus-visible,
 select:focus-visible,
 textarea:focus-visible {
-  outline: 2px solid rgba(61, 111, 106, 0.35);
+  outline: 2px solid var(--focus-ring);
   outline-offset: 1px;
 }
 
@@ -120,7 +155,7 @@ textarea:focus-visible {
   border-radius: 6px;
   background: var(--surface);
   padding: 12px 14px;
-  box-shadow: 0 1px 2px rgba(20, 24, 28, 0.04);
+  box-shadow: var(--shadow-1);
 }
 
 .config-panel {
@@ -336,14 +371,14 @@ input:disabled {
 
 .status-pill[data-status="CUDA candidate"],
 .status-pill[data-status*="CUDA"] {
-  border-color: #b5d4c8;
+  border-color: var(--success-line);
   color: var(--success);
   background: var(--success-soft);
 }
 
 .status-pill[data-status*="unavailable"],
 .status-pill[data-status*="fallback"] {
-  border-color: #e0bbb6;
+  border-color: var(--danger-line);
   color: var(--danger);
   background: var(--danger-soft);
 }
@@ -354,7 +389,7 @@ input:disabled {
   gap: 8px;
   padding: 6px 8px;
   border-radius: 5px;
-  border: 1px solid #ecd9b8;
+  border: 1px solid var(--warn-line);
   background: var(--warn-soft);
   color: var(--warn);
   font-size: 11px;
@@ -377,7 +412,7 @@ input:disabled {
   border-radius: 5px;
   background: var(--surface-muted);
   color: var(--muted);
-  font-family: "Cascadia Mono", Consolas, monospace;
+  font-family: var(--font-mono);
   font-size: 11px;
   line-height: 1.4;
   white-space: pre-wrap;
@@ -459,7 +494,7 @@ input[type="color"] {
 textarea {
   min-height: 180px;
   resize: vertical;
-  font-family: "Cascadia Mono", Consolas, monospace;
+  font-family: var(--font-mono);
   font-size: 11px;
   line-height: 1.45;
 }
@@ -500,7 +535,7 @@ textarea.prompt-area {
 
 .primary-button {
   background: var(--accent);
-  color: #fff;
+  color: var(--on-accent);
   font-weight: 600;
 }
 
@@ -660,7 +695,7 @@ textarea.prompt-area {
   border: 1px solid var(--line);
   border-radius: 6px;
   background: var(--surface);
-  box-shadow: 0 1px 2px rgba(20, 24, 28, 0.04);
+  box-shadow: var(--shadow-1);
 }
 
 .runbar strong {
@@ -746,16 +781,16 @@ textarea.prompt-area {
 }
 
 .result-item[data-status="done"] {
-  border-color: #c5ddd2;
+  border-color: var(--success-line);
 }
 
 .result-item[data-status="failed"] {
-  border-color: #e4c4c0;
+  border-color: var(--danger-line);
   background: var(--danger-soft);
 }
 
 .result-item[data-status="skipped"] {
-  border-color: #e6dcc0;
+  border-color: var(--warn-line);
   background: var(--warn-soft);
 }
 
@@ -893,7 +928,7 @@ textarea.prompt-area {
 }
 
 .log-entry[data-level="info"] {
-  border-left-color: #9aa8b8;
+  border-left-color: var(--info-line);
   background: var(--info-soft);
 }
 
@@ -943,9 +978,9 @@ textarea.prompt-area {
   margin: 6px 0 0;
   padding: 6px;
   border-radius: 4px;
-  background: rgba(255, 255, 255, 0.65);
+  background: rgba(0, 0, 0, 0.28);
   color: inherit;
-  font-family: "Cascadia Mono", Consolas, monospace;
+  font-family: var(--font-mono);
   font-size: 10px;
   line-height: 1.4;
   white-space: pre-wrap;
@@ -989,5 +1024,297 @@ svg {
 
   .config-panel {
     max-height: none;
+  }
+}
+
+/* ===================================================================
+   P1 — Photoshop-style editor shell: toolbar / filmstrip / canvas /
+   inspector / status bar. Reuses every existing control id; only the
+   containers around them changed.
+   =================================================================== */
+
+.app {
+  height: 100vh;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  background: var(--bg);
+}
+
+/* ── Toolbar ── */
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--line);
+  background: var(--surface);
+}
+
+.toolbar-brand h1 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+}
+
+.toolbar-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.toolbar-sep {
+  align-self: stretch;
+  width: 1px;
+  margin: var(--space-1) 2px;
+  background: var(--line);
+}
+
+.toolbar-spacer {
+  flex: 1 1 auto;
+}
+
+.toolbar-meta {
+  gap: var(--space-2);
+}
+
+/* The start button is the only accent action; keep it compact in the bar. */
+.toolbar .primary-button {
+  padding: 6px 14px;
+}
+
+/* ── Workspace ── */
+.workspace {
+  display: grid;
+  grid-template-columns: 208px minmax(0, 1fr) 360px;
+  min-height: 0;
+}
+
+.filmstrip,
+.inspector {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--surface);
+}
+
+.filmstrip {
+  border-right: 1px solid var(--line);
+}
+
+.inspector {
+  border-left: 1px solid var(--line);
+}
+
+.zone-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding: 10px var(--space-3);
+  border-bottom: 1px solid var(--line);
+}
+
+.zone-head h2 {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.zone-meta {
+  margin: 0;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+/* Filmstrip input list fills the column (overrides the old fixed heights). */
+.filmstrip .path-list {
+  flex: 1;
+  min-height: 0;
+  max-height: none;
+  margin: 0;
+  padding: 10px;
+}
+
+/* ── Canvas (visual focus) ── */
+.canvas {
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
+  min-width: 0;
+  background: var(--bg);
+}
+
+.canvas-stage {
+  min-height: 0;
+  overflow: auto;
+  display: grid;
+  place-items: center;
+  padding: var(--space-4);
+}
+
+.canvas-stage .empty-state {
+  width: 100%;
+  max-width: 460px;
+}
+
+/* Until P4 turns this into a real image canvas, results render here. */
+.canvas-stage .result-list {
+  width: 100%;
+  height: 100%;
+  max-height: none;
+}
+
+.canvas-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px var(--space-3);
+  border-top: 1px solid var(--line);
+  background: var(--surface);
+}
+
+/* ── Inspector ── */
+.inspector-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: var(--space-3);
+}
+
+.inspector-scroll .config-tab-panels {
+  overflow: visible;
+}
+
+/* ── Status bar ── */
+.statusbar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: 6px var(--space-3);
+  border-top: 1px solid var(--line);
+  background: var(--surface);
+}
+
+.statusbar-info {
+  display: flex;
+  flex-direction: column;
+  min-width: 150px;
+  max-width: 280px;
+}
+
+.statusbar-info strong {
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.statusbar-info #statusText {
+  margin: 0;
+  color: var(--muted);
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.statusbar .progress-wrap {
+  margin: 0;
+  flex: 0 0 auto;
+}
+
+/* Numeric progress readout uses the mono HUD face. */
+#progressLabel {
+  font-family: var(--font-mono);
+  font-size: 10px;
+}
+
+.statusbar-log {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  gap: 4px;
+}
+
+.statusbar-log-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.statusbar-log-head h2 {
+  margin: 0;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.statusbar .log-list {
+  height: 56px;
+}
+
+/* ── Inspector accordion (P2): PS-style dockable property groups ── */
+.acc {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  margin-bottom: var(--space-2);
+  background: var(--surface);
+}
+
+.acc[open] {
+  border-color: var(--line-strong);
+}
+
+.acc-head {
+  cursor: pointer;
+  list-style: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  min-height: 34px;
+  padding: 7px 10px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text);
+  user-select: none;
+}
+
+.acc-head::-webkit-details-marker {
+  display: none;
+}
+
+.acc-head:hover {
+  background: var(--surface-muted);
+}
+
+.acc[open] > .acc-head {
+  border-bottom: 1px solid var(--line);
+}
+
+.acc-chev {
+  flex: 0 0 auto;
+  color: var(--muted);
+  transition: transform 140ms ease;
+}
+
+.acc[open] > .acc-head .acc-chev {
+  transform: rotate(90deg);
+}
+
+.acc-body {
+  padding: 10px;
+}
+
+/* Narrow windows (min 960): collapse the inspector to keep the canvas usable. */
+@media (max-width: 1080px) {
+  .workspace {
+    grid-template-columns: 180px minmax(0, 1fr) 320px;
   }
 }
