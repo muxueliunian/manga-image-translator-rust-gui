@@ -166,6 +166,49 @@
 - 已暴露到 WebView GUI（OCR 区「Beam 宽度」数字框，附 hint：1=贪心最快略降准确率，越大越稳越慢，仅 Ocr48px 生效）。
 - schema/example 同步。**收益与质量回退尚未实测**——待后续按统一基线测 beam=1 vs 5 后再补一行到下方表格。
 
+### 放大器（upscaler）性能诊断（2026-06-18）
+
+**背景**：用户启用 ESRGAN 2× 翻 2 张图耗时 **十几分钟**，显存全程 ~7.x/8GB 近满。排查结论——
+
+**机制合理、CUDA 已接**：provider 顺序 CUDA 优先（`base-util/src/onnx.rs:31`），ESRGAN 支持分块（`patch_size`）+ FP16 + 批处理（`modules/upscaler/esrgan/src/lib.rs`）。问题在**默认配置对 8GB 显存是灾难**，三坑叠加：
+
+1. **`patch_size` 默认空 → 整页一次前向**（GUI `app.js:999/1072` 空值 → `None` → `esrgan/lib.rs:137` 不分块）。整页 RealESRGAN RRDBNet 中间特征图显存需求极大。
+2. **`fast=true` 硬编码**（`webview_ui.rs:713` → `Models::new(2,16,true,..)` → `EsrGanModel::X2Plus{f32:true}`）→ 选了更重的 **f32** 模型。⚠️ 命名反直觉：`fast=true` 实际选**慢的 f32**（`half()=!f32`）。
+3. **共享池已占 ~7GB/8GB**，仅剩 ~1GB → 整页 f32 ESRGAN 装不下 → CUDA 退 CPU 或显存抖动 → 分钟级。"显存 7.x 不动"即上层模型常驻、放大器没真正吃到 GPU 的迹象。
+
+**实测确认（`job_1781715560714.log`，debug=OFF, images=2/gpu=1, ESRGAN 2×）**：
+- upscaler **503.66s / 585.24s**（≈8.4 / 9.75 分钟），占各图 pipeline **97%**；整任务 **1122s / 2 图**。
+- `gpu-memory pipeline-start: 5066/8188 MiB` → upscaler 起始**仅 ~3GB 空闲**，整页 f32 装不下 → 跑成 CPU 级（2× 放大正常应秒级）。三坑诊断坐实。
+- 副作用：放大后整页变约 3571×5200，**下游 detector/ocr/inpainter 全在 2× 大图上跑**；而 `detect_size=2048` 又把它缩回 2048 检测——**放大的分辨率 detector 直接丢弃，对检测零增益**。
+
+**确认手段**：`run-ui-debug.bat` 控制台 `Execution provider ... in use` 仅表示**注册**成功；放大那段 `nvidia-smi -l 1` 若 GPU util≈0%、CPU 跑满 → 实锤退 CPU。
+
+**结论：放大器当前不可用且对质量无正贡献 → 默认保持关闭（`upscaler=none`）。**
+
+**修复杠杆（待定，本轮仅记录，未改）**：
+1. 给 `patch_size` 合理默认（如 256–512），分块让每次前向只占几百 MB → 真正落 GPU。**最大杠杆**。
+2. 改用 f16 模型（`fast=false`），显存/算力减半；顺带修 `fast`→`f32` 反直觉命名。
+3. 二者叠加后整页放大才可能在 8GB 上以 GPU 速度跑完。
+
+> 注：用户原意是"用放大器救 OCR 质量"。但 OCR 切图已被 warp 到 48px（`util/ocr.rs:38`），且"无气泡背景文字"识别差的根因是 **detector 框歪**，非分辨率——放大器对该症状基本无效。若仍要走"超分救 OCR"，正确形态是**只超分 OCR 切图**而非整页，且属较重的跨 sync/async 改造。**先做 debug-patch 诊断（看 `ocr_patches/patch_*.png` 是框错还是糊）再决定投不投。**
+
+### detector 调参负结论（2026-06-18）
+
+针对"无气泡背景文字 OCR 差"试调 DBNet 阈值，**结果更差，默认最优**：
+
+- 降 `box_threshold` / `text_threshold` → 检出更多**碎框/噪声框**，把连贯句子**切成数段**，textline-merge 未能合回 → **只翻译其中一段**（"句子只译了一部分"）。
+- 升 `unclip_ratio` 或碎框 → 框位/形状偏移，mask 跟着偏 → inpainter 只盖被 mask 覆盖区域 → **原文露底**（"文字无法完全覆盖"）。
+
+**结论**：对该批漫画内容，**默认 DBNet 配置即甜点**，阈值调参方向错误。OCR 模型（Ocr48px）、beam（5）、detector 阈值——**实测默认全是最优，调了都更差**。"无气泡背景文字"是现有轻量工具链的**能力天花板**，廉价配置救不了；要突破只剩**换更强漫画检测/识别模型**或 **LLM+多模态**两条重路（短期不投）。
+
+### 启动预热（warm-up）排期（2026-06-18，暂缓）
+
+冷启动真相已查清：`Models::new` 只建空壳，ONNX session 在首图各阶段首次 `.load()` 时才创建（`setup/mod.rs:53`、`webview_ui.rs:698 ensure_models`）；模型一旦加载常驻共享 `Arc<Models>` 池，之后整会话皆热。预热（session 预加载）方案已设计但**暂缓**，等放大器方向与基线确认后再做：
+
+- 难点：`ModelLoad::load()` 带关联类型 `Self::T`，非对象安全，`Box<dyn Ocr/Detector/...>` 调不到。
+- 方案：4 个 registry trait 各加默认空实现的对象安全 `prepare()`，ONNX 实现重写为 `self.load()`；`Models::warm_up(&settings)` 只并发预热**选中**的模型（避免白占显存）；触发点候选 A=配置保存 / B=启动读 app.json / A+B（推荐）。
+- ROI：仅省"每会话第一次翻译"的建 session 等待，不改稳态；CUDA 首推 autotune 仍在第一张真图发生。
+
 ---
 
 ## 6. 优化记录（每优化一次追加一行）
