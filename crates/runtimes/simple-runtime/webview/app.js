@@ -12,6 +12,7 @@ const i18n = {
     pathKindFolder: "文件夹",
     noInput: "尚未添加输入。可多次添加图片或文件夹。",
     outputGroup: "输出",
+    runtimeGroup: "运行",
     outputDir: "导出目录",
     outputFormat: "输出格式",
     textDirection: "文字方向",
@@ -170,6 +171,7 @@ const i18n = {
     pathKindFolder: "Folder",
     noInput: "No input yet. Add images or folders in multiple passes.",
     outputGroup: "Output",
+    runtimeGroup: "Runtime",
     outputDir: "Export Directory",
     outputFormat: "Output Format",
     textDirection: "Text Direction",
@@ -354,7 +356,6 @@ const state = {
   pending: new Map(),
   isRunning: false,
   cudaErrorExpanded: false,
-  activeConfigTab: "translation",
 };
 
 const els = {
@@ -439,8 +440,6 @@ const els = {
   results: document.getElementById("results"),
   logList: document.getElementById("logList"),
   clearLog: document.getElementById("clearLog"),
-  configTabs: document.querySelectorAll(".config-tab"),
-  configPanels: document.querySelectorAll(".config-tab-panel"),
 };
 
 window.MIT_BRIDGE = {
@@ -853,20 +852,6 @@ function updateProviderStatus(status) {
   const label = status || "CUDA unknown";
   els.providerStatus.textContent = label;
   els.providerStatus.dataset.status = label;
-}
-
-function switchConfigTab(tab) {
-  state.activeConfigTab = tab;
-  els.configTabs.forEach((button) => {
-    const active = button.dataset.tab === tab;
-    button.classList.toggle("is-active", active);
-    button.setAttribute("aria-selected", active ? "true" : "false");
-  });
-  els.configPanels.forEach((panel) => {
-    const active = panel.dataset.panel === tab;
-    panel.classList.toggle("is-active", active);
-    panel.hidden = !active;
-  });
 }
 
 async function chooseImages() {
@@ -1358,7 +1343,6 @@ async function bootstrap() {
   applyLang();
   renderInputList();
   renderLogEmptyState();
-  switchConfigTab(state.activeConfigTab);
 
   els.langToggle.addEventListener("click", () => {
     state.lang = state.lang === "zh" ? "en" : "zh";
@@ -1376,9 +1360,6 @@ async function bootstrap() {
     state.cudaErrorExpanded = !state.cudaErrorExpanded;
     els.cudaErrorDetail.classList.toggle("hidden", !state.cudaErrorExpanded);
     els.cudaErrorToggle.textContent = state.cudaErrorExpanded ? t("cudaHide") : t("cudaDetails");
-  });
-  els.configTabs.forEach((button) => {
-    button.addEventListener("click", () => switchConfigTab(button.dataset.tab));
   });
   document.addEventListener("keydown", (event) => {
     if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "s") {

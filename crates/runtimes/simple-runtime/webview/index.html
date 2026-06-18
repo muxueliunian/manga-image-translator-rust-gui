@@ -9,445 +9,484 @@
   </style>
 </head>
 <body>
-  <main class="shell">
-    <header class="topbar">
-      <div class="topbar-brand">
+  <main class="app">
+    <!-- ───────────────────────── TOOLBAR ───────────────────────── -->
+    <header class="toolbar">
+      <div class="toolbar-brand">
         <h1 data-i18n="title">漫画图片翻译</h1>
-        <p class="topbar-sub" data-i18n="subtitle">本地漫画页翻译与导出</p>
       </div>
-      <div class="top-actions">
+
+      <div class="toolbar-group" aria-label="Input">
+        <button id="pickImages" class="secondary-button" type="button" data-i18n="pickImages">添加图片</button>
+        <button id="pickFolder" class="secondary-button" type="button" data-i18n="pickFolder">添加文件夹</button>
+        <button id="clearInputs" class="ghost-button" type="button" data-i18n="clearInputs">清空</button>
+      </div>
+
+      <div class="toolbar-sep" aria-hidden="true"></div>
+
+      <div class="toolbar-group" aria-label="Run">
+        <button id="startTranslation" class="primary-button" type="button">
+          <span class="btn-spinner" aria-hidden="true"></span>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m8 5 11 7-11 7V5Z" /></svg>
+          <span class="start-label">开始翻译</span>
+        </button>
+        <button id="exportSelected" class="secondary-button" type="button" data-i18n="exportSelected">导出选中</button>
+      </div>
+
+      <div class="toolbar-sep" aria-hidden="true"></div>
+
+      <div class="toolbar-group" aria-label="Config">
+        <button id="reloadDefaults" class="ghost-button" type="button" data-i18n="reloadDefaults">默认值</button>
+        <button id="loadConfig" class="ghost-button" type="button" data-i18n="loadConfig">加载</button>
+        <button id="saveConfig" class="ghost-button" type="button" data-i18n="saveConfig">保存</button>
+      </div>
+
+      <div class="toolbar-spacer"></div>
+
+      <div class="toolbar-group toolbar-meta" aria-label="Status">
+        <span id="providerStatus" class="status-pill">CUDA unknown</span>
         <span id="backendBadge" class="badge">wry/webview2</span>
         <button id="langToggle" class="ghost-button" type="button">English</button>
       </div>
     </header>
 
-    <div class="layout">
-      <section class="panel input-panel" aria-labelledby="inputTitle">
-        <div class="panel-heading">
-          <div>
-            <h2 id="inputTitle" data-i18n="inputTitle">输入队列</h2>
-            <p id="inputStats" class="panel-meta" data-i18n="inputStatsEmpty">0 项 · 0 文件 · 0 文件夹</p>
-          </div>
+    <!-- ──────────────── WORKSPACE: filmstrip | canvas | inspector ──────────────── -->
+    <div class="workspace">
+      <!-- ── FILMSTRIP ── -->
+      <aside class="filmstrip" aria-labelledby="inputTitle">
+        <div class="zone-head">
+          <h2 id="inputTitle" data-i18n="inputTitle">输入队列</h2>
+          <p id="inputStats" class="zone-meta" data-i18n="inputStatsEmpty">0 项 · 0 文件 · 0 文件夹</p>
         </div>
-
-        <div class="input-toolbar">
-          <button id="pickImages" class="secondary-button" type="button" data-i18n="pickImages">添加图片</button>
-          <button id="pickFolder" class="secondary-button" type="button" data-i18n="pickFolder">添加文件夹</button>
-          <button id="clearInputs" class="ghost-button" type="button" data-i18n="clearInputs">清空</button>
-        </div>
-
         <div class="path-list" id="inputList" aria-live="polite"></div>
+      </aside>
 
-        <div class="field-group">
-          <p class="group-label" data-i18n="outputGroup">输出</p>
-          <div class="form-grid">
-            <label class="field">
-              <span data-i18n="outputDir">导出目录</span>
-              <div class="path-picker">
-                <input id="outputDir" type="text" readonly placeholder="未选择">
-                <button id="pickOutputDir" type="button" class="icon-button" aria-label="Choose output directory" title="Choose output directory">
-                  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7.5A2.5 2.5 0 0 1 5.5 5H10l2 2h6.5A2.5 2.5 0 0 1 21 9.5v7A2.5 2.5 0 0 1 18.5 19h-13A2.5 2.5 0 0 1 3 16.5v-9Z" /></svg>
-                </button>
-              </div>
-            </label>
-            <label class="field">
-              <span data-i18n="outputFormat">输出格式</span>
-              <select id="outputFormat">
-                <option value="png" selected>PNG</option>
-                <option value="html">HTML</option>
-                <option value="raw">Raw MIT</option>
-              </select>
-            </label>
-          </div>
+      <!-- ── CANVAS ── -->
+      <section class="canvas" aria-label="Canvas">
+        <div class="canvas-stage">
+          <div id="results" class="empty-state" data-i18n="resultEmpty">暂无结果。完成翻译后可预览图片，并选择导出到指定目录。</div>
         </div>
-
-        <div class="runtime-bar" aria-label="Runtime settings">
-          <div class="runtime-status">
-            <span id="providerStatus" class="status-pill">CUDA unknown</span>
-            <div id="cudaErrorWrap" class="cuda-hint hidden">
-              <span id="cudaErrorSummary" class="cuda-hint-text"></span>
-              <button id="cudaErrorToggle" class="link-button" type="button" data-i18n="cudaDetails">详情</button>
-            </div>
-            <pre id="cudaErrorDetail" class="cuda-detail hidden"></pre>
-          </div>
-          <div class="runtime-controls">
-            <label class="check-field compact-check" data-i18n-title="requireCudaHint">
-              <input id="requireCuda" type="checkbox">
-              <span data-i18n="requireCuda">强制 CUDA</span>
-            </label>
-            <label class="check-field compact-check" data-i18n-title="debugModeHint">
-              <input id="debugMode" type="checkbox">
-              <span data-i18n="debugMode">调试输出</span>
-            </label>
-            <label class="field compact-field">
-              <span data-i18n="maxParallelImages">图片并发</span>
-              <input id="maxParallelImages" type="number" min="1" max="8" step="1" value="2">
-            </label>
-            <label class="field compact-field">
-              <span data-i18n="maxParallelGpuJobs">GPU 并发</span>
-              <input id="maxParallelGpuJobs" type="number" min="1" max="4" step="1" value="1">
-            </label>
-          </div>
+        <div class="canvas-bar">
+          <button id="selectAllResults" class="ghost-button" type="button" data-i18n="selectAllResults">全选</button>
+          <span id="resultStats" class="zone-meta" data-i18n="resultStatsEmpty">暂无结果</span>
         </div>
       </section>
 
-      <aside class="panel config-panel" aria-labelledby="configTitle">
-        <div class="panel-heading compact">
-          <div>
-            <h2 id="configTitle" data-i18n="configTitle">翻译配置</h2>
-          </div>
-          <div class="config-actions">
-            <button id="reloadDefaults" class="ghost-button" type="button" data-i18n="reloadDefaults">默认值</button>
-            <button id="loadConfig" class="ghost-button" type="button" data-i18n="loadConfig">加载</button>
-            <button id="saveConfig" class="ghost-button" type="button" data-i18n="saveConfig">保存</button>
-          </div>
+      <!-- ── INSPECTOR ── -->
+      <aside class="inspector" aria-labelledby="configTitle">
+        <div class="zone-head">
+          <h2 id="configTitle" data-i18n="configTitle">翻译配置</h2>
         </div>
 
-        <div class="config-tabs" role="tablist" aria-label="Config sections">
-          <button class="config-tab is-active" type="button" role="tab" aria-selected="true" data-tab="translation" data-i18n="tabTranslation">翻译</button>
-          <button class="config-tab" type="button" role="tab" aria-selected="false" data-tab="detection" data-i18n="tabDetectionOcr">检测 / OCR</button>
-          <button class="config-tab" type="button" role="tab" aria-selected="false" data-tab="inpaint" data-i18n="tabInpaintMask">修补 / Mask</button>
-          <button class="config-tab" type="button" role="tab" aria-selected="false" data-tab="upscale" data-i18n="tabUpscaleRender">放大 / 渲染</button>
-        </div>
-
-        <div class="config-tab-panels">
-          <section class="config-tab-panel is-active" data-panel="translation" role="tabpanel">
-            <div class="form-grid compact">
-              <label class="field">
-                <span data-i18n="translator">翻译器</span>
-                <select id="translator">
-                  <option value="Sugoi">Sugoi</option>
-                  <option value="OpenAICompatible">OpenAI Compatible</option>
-                  <option value="Google">Google</option>
-                  <option value="Deepl">DeepL</option>
-                  <option value="Baidu">Baidu</option>
-                  <option value="Caiyun">Caiyun</option>
-                  <option value="Youdao">Youdao</option>
-                  <option value="Papago">Papago</option>
-                  <option value="MyMemory">MyMemory</option>
-                  <option value="NLLBSmallDistilled">NLLB Small</option>
-                  <option value="NLLBBase">NLLB Base</option>
-                  <option value="NLLBLarge">NLLB Large</option>
-                  <option value="M2M100Small">M2M100 Small</option>
-                  <option value="M2M100Large">M2M100 Large</option>
-                  <option value="MBart">MBart</option>
-                  <option value="JParaCrawlSmall">JParaCrawl Small</option>
-                  <option value="JParaCrawlBase">JParaCrawl Base</option>
-                  <option value="JParaCrawlLarge">JParaCrawl Large</option>
-                </select>
-                <small class="model-hint" id="translatorHint"></small>
-              </label>
-              <label class="field">
-                <span data-i18n="targetLang">目标语言</span>
-                <select id="targetLang">
-                  <option value="chs">简体中文</option>
-                  <option value="cht">繁體中文</option>
-                  <option value="en">English</option>
-                  <option value="ja">日本語</option>
-                  <option value="ko">한국어</option>
-                  <option value="fr">Français</option>
-                  <option value="de">Deutsch</option>
-                  <option value="es">Español</option>
-                  <option value="ru">Русский</option>
-                </select>
-              </label>
-            </div>
-            <div class="form-grid compact">
-              <label class="field">
-                <span data-i18n="filterLang" data-i18n-title="filterLangHint">跳过语言</span>
-                <input id="filterLang" type="text" placeholder="en, ja">
-              </label>
-              <label class="field">
-                <span data-i18n="preDict">前置字典</span>
-                <input id="preDict" type="text" placeholder="dict/pre_dict.txt">
-              </label>
-            </div>
-            <label class="field">
-              <span data-i18n="postDict">后置字典</span>
-              <input id="postDict" type="text" placeholder="dict/post_dict.txt">
-            </label>
-
-            <div class="subsection" id="openaiBlock">
-              <p class="group-label" data-i18n="openaiSection">OpenAI Compatible</p>
-              <label class="field">
-                <span data-i18n="provider">模型供应商</span>
-                <select id="provider">
-                  <option value="Custom">Custom</option>
-                  <option value="OpenAI">OpenAI</option>
-                  <option value="DeepSeek">DeepSeek</option>
-                  <option value="OpenRouter">OpenRouter</option>
-                  <option value="SiliconFlow">SiliconFlow</option>
-                  <option value="DashScope">DashScope</option>
-                  <option value="Moonshot">Moonshot/Kimi</option>
-                  <option value="Zhipu">Zhipu GLM</option>
-                </select>
-              </label>
-              <label class="field">
-                <span data-i18n="baseUrl">Base URL</span>
-                <input id="baseUrl" type="url" placeholder="https://api.deepseek.com/v1">
-              </label>
-              <label class="field">
-                <span data-i18n="apiKey">API Key</span>
-                <input id="apiKey" type="password" autocomplete="off" placeholder="sk-...">
-              </label>
+        <div class="inspector-scroll">
+          <!-- 翻译 -->
+          <details class="acc" open>
+            <summary class="acc-head">
+              <span data-i18n="tabTranslation">翻译</span>
+              <svg class="acc-chev" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6" /></svg>
+            </summary>
+            <div class="acc-body">
               <div class="form-grid compact">
                 <label class="field">
-                  <span data-i18n="modelName">模型名称</span>
-                  <input id="modelName" type="text" placeholder="deepseek-chat / gpt-4.1-mini">
+                  <span data-i18n="translator">翻译器</span>
+                  <select id="translator">
+                    <option value="Sugoi">Sugoi</option>
+                    <option value="OpenAICompatible">OpenAI Compatible</option>
+                    <option value="Google">Google</option>
+                    <option value="Deepl">DeepL</option>
+                    <option value="Baidu">Baidu</option>
+                    <option value="Caiyun">Caiyun</option>
+                    <option value="Youdao">Youdao</option>
+                    <option value="Papago">Papago</option>
+                    <option value="MyMemory">MyMemory</option>
+                    <option value="NLLBSmallDistilled">NLLB Small</option>
+                    <option value="NLLBBase">NLLB Base</option>
+                    <option value="NLLBLarge">NLLB Large</option>
+                    <option value="M2M100Small">M2M100 Small</option>
+                    <option value="M2M100Large">M2M100 Large</option>
+                    <option value="MBart">MBart</option>
+                    <option value="JParaCrawlSmall">JParaCrawl Small</option>
+                    <option value="JParaCrawlBase">JParaCrawl Base</option>
+                    <option value="JParaCrawlLarge">JParaCrawl Large</option>
+                  </select>
+                  <small class="model-hint" id="translatorHint"></small>
                 </label>
                 <label class="field">
-                  <span data-i18n="timeoutSecs" data-i18n-title="timeoutSecsHint">超时秒数</span>
-                  <input id="timeoutSecs" type="number" min="1" max="600" step="1">
+                  <span data-i18n="targetLang">目标语言</span>
+                  <select id="targetLang">
+                    <option value="chs">简体中文</option>
+                    <option value="cht">繁體中文</option>
+                    <option value="en">English</option>
+                    <option value="ja">日本語</option>
+                    <option value="ko">한국어</option>
+                    <option value="fr">Français</option>
+                    <option value="de">Deutsch</option>
+                    <option value="es">Español</option>
+                    <option value="ru">Русский</option>
+                  </select>
                 </label>
               </div>
               <div class="form-grid compact">
                 <label class="field">
-                  <span data-i18n="temperature" data-i18n-title="temperatureHint">Temperature</span>
-                  <input id="temperature" type="number" min="0" max="2" step="0.05">
+                  <span data-i18n="filterLang" data-i18n-title="filterLangHint">跳过语言</span>
+                  <input id="filterLang" type="text" placeholder="en, ja">
                 </label>
                 <label class="field">
-                  <span data-i18n="topP" data-i18n-title="topPHint">Top P</span>
-                  <input id="topP" type="number" min="0" max="1" step="0.05">
+                  <span data-i18n="preDict">前置字典</span>
+                  <input id="preDict" type="text" placeholder="dict/pre_dict.txt">
                 </label>
               </div>
               <label class="field">
-                <span data-i18n="systemPrompt">System Prompt</span>
-                <textarea id="systemPrompt" class="prompt-area" spellcheck="false"></textarea>
+                <span data-i18n="postDict">后置字典</span>
+                <input id="postDict" type="text" placeholder="dict/post_dict.txt">
               </label>
-              <label class="field">
-                <span data-i18n="userPrompt">User Prompt Template</span>
-                <textarea id="userPrompt" class="prompt-area" spellcheck="false"></textarea>
-              </label>
-            </div>
-          </section>
 
-          <section class="config-tab-panel" data-panel="detection" role="tabpanel" hidden>
-            <p class="group-label" data-i18n="detectorSection">检测</p>
-            <div class="form-grid compact">
-              <label class="field">
-                <span data-i18n="detector">检测器</span>
-                <select id="detector">
-                  <option value="DBNet">DBNet</option>
-                  <option value="Paddle">Paddle</option>
-                  <option value="Ctd">CTD</option>
-                </select>
-                <small class="model-hint" id="detectorHint"></small>
-              </label>
-              <label class="field">
-                <span data-i18n="detectSize" data-i18n-title="detectSizeHint">检测尺寸</span>
-                <input id="detectSize" type="number" min="512" max="4096" step="64">
-              </label>
+              <div class="subsection" id="openaiBlock">
+                <p class="group-label" data-i18n="openaiSection">OpenAI Compatible</p>
+                <label class="field">
+                  <span data-i18n="provider">模型供应商</span>
+                  <select id="provider">
+                    <option value="Custom">Custom</option>
+                    <option value="OpenAI">OpenAI</option>
+                    <option value="DeepSeek">DeepSeek</option>
+                    <option value="OpenRouter">OpenRouter</option>
+                    <option value="SiliconFlow">SiliconFlow</option>
+                    <option value="DashScope">DashScope</option>
+                    <option value="Moonshot">Moonshot/Kimi</option>
+                    <option value="Zhipu">Zhipu GLM</option>
+                  </select>
+                </label>
+                <label class="field">
+                  <span data-i18n="baseUrl">Base URL</span>
+                  <input id="baseUrl" type="url" placeholder="https://api.deepseek.com/v1">
+                </label>
+                <label class="field">
+                  <span data-i18n="apiKey">API Key</span>
+                  <input id="apiKey" type="password" autocomplete="off" placeholder="sk-...">
+                </label>
+                <div class="form-grid compact">
+                  <label class="field">
+                    <span data-i18n="modelName">模型名称</span>
+                    <input id="modelName" type="text" placeholder="deepseek-chat / gpt-4.1-mini">
+                  </label>
+                  <label class="field">
+                    <span data-i18n="timeoutSecs" data-i18n-title="timeoutSecsHint">超时秒数</span>
+                    <input id="timeoutSecs" type="number" min="1" max="600" step="1">
+                  </label>
+                </div>
+                <div class="form-grid compact">
+                  <label class="field">
+                    <span data-i18n="temperature" data-i18n-title="temperatureHint">Temperature</span>
+                    <input id="temperature" type="number" min="0" max="2" step="0.05">
+                  </label>
+                  <label class="field">
+                    <span data-i18n="topP" data-i18n-title="topPHint">Top P</span>
+                    <input id="topP" type="number" min="0" max="1" step="0.05">
+                  </label>
+                </div>
+                <label class="field">
+                  <span data-i18n="systemPrompt">System Prompt</span>
+                  <textarea id="systemPrompt" class="prompt-area" spellcheck="false"></textarea>
+                </label>
+                <label class="field">
+                  <span data-i18n="userPrompt">User Prompt Template</span>
+                  <textarea id="userPrompt" class="prompt-area" spellcheck="false"></textarea>
+                </label>
+              </div>
             </div>
-            <div class="form-grid compact">
-              <label class="field">
-                <span data-i18n="unclipRatio" data-i18n-title="unclipRatioHint">Unclip Ratio</span>
-                <input id="unclipRatio" type="number" min="0.5" max="5" step="0.05">
-              </label>
-              <label class="field">
-                <span data-i18n="textThreshold" data-i18n-title="textThresholdHint">Text Threshold</span>
-                <input id="textThreshold" type="number" min="0" max="1" step="0.05">
-              </label>
-            </div>
-            <label class="field">
-              <span data-i18n="boxThreshold" data-i18n-title="boxThresholdHint">Box Threshold</span>
-              <input id="boxThreshold" type="number" min="0" max="1" step="0.05">
-            </label>
-            <div class="toggle-grid">
-              <label class="check-field">
-                <input id="preInvert" type="checkbox">
-                <span data-i18n="preInvert" data-i18n-title="preInvertHint">反相检测</span>
-              </label>
-              <label class="check-field">
-                <input id="preGamma" type="checkbox">
-                <span data-i18n="preGamma" data-i18n-title="preGammaHint">Gamma 校正</span>
-              </label>
-              <label class="check-field">
-                <input id="preRotate" type="checkbox">
-                <span data-i18n="preRotate" data-i18n-title="preRotateHint">旋转检测</span>
-              </label>
-              <label class="check-field">
-                <input id="preAutoRotate" type="checkbox">
-                <span data-i18n="preAutoRotate" data-i18n-title="preAutoRotateHint">自动旋转</span>
-              </label>
-            </div>
+          </details>
 
-            <p class="group-label" data-i18n="ocrSection">OCR</p>
-            <div class="form-grid compact">
+          <!-- 检测 / OCR -->
+          <details class="acc">
+            <summary class="acc-head">
+              <span data-i18n="tabDetectionOcr">检测 / OCR</span>
+              <svg class="acc-chev" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6" /></svg>
+            </summary>
+            <div class="acc-body">
+              <p class="group-label" data-i18n="detectorSection">检测</p>
+              <div class="form-grid compact">
+                <label class="field">
+                  <span data-i18n="detector">检测器</span>
+                  <select id="detector">
+                    <option value="DBNet">DBNet</option>
+                    <option value="Paddle">Paddle</option>
+                    <option value="Ctd">CTD</option>
+                  </select>
+                  <small class="model-hint" id="detectorHint"></small>
+                </label>
+                <label class="field">
+                  <span data-i18n="detectSize" data-i18n-title="detectSizeHint">检测尺寸</span>
+                  <input id="detectSize" type="number" min="512" max="4096" step="64">
+                </label>
+              </div>
+              <div class="form-grid compact">
+                <label class="field">
+                  <span data-i18n="unclipRatio" data-i18n-title="unclipRatioHint">Unclip Ratio</span>
+                  <input id="unclipRatio" type="number" min="0.5" max="5" step="0.05">
+                </label>
+                <label class="field">
+                  <span data-i18n="textThreshold" data-i18n-title="textThresholdHint">Text Threshold</span>
+                  <input id="textThreshold" type="number" min="0" max="1" step="0.05">
+                </label>
+              </div>
               <label class="field">
-                <span data-i18n="ocrModel">OCR 模型</span>
-                <select id="ocrModel">
-                  <option value="Ocr48px">Ocr48px</option>
-                  <option value="Ctc48px">Ctc48px</option>
-                  <option value="MangaOcr">Manga OCR</option>
-                  <option value="Native">Native</option>
-                  <option value="Tesseract">Tesseract</option>
-                </select>
-                <small class="model-hint" id="ocrHint"></small>
+                <span data-i18n="boxThreshold" data-i18n-title="boxThresholdHint">Box Threshold</span>
+                <input id="boxThreshold" type="number" min="0" max="1" step="0.05">
               </label>
-              <label class="field">
-                <span data-i18n="minTextLength" data-i18n-title="minTextLengthHint">最短文本</span>
-                <input id="minTextLength" type="number" min="0" max="100" step="1">
-              </label>
-            </div>
-            <div class="form-grid compact">
-              <label class="field">
-                <span data-i18n="ocrProb" data-i18n-title="ocrProbHint">OCR 置信度</span>
-                <input id="ocrProb" type="number" min="0" max="1" step="0.05">
-              </label>
-              <label class="field">
-                <span data-i18n="beamSize" data-i18n-title="beamSizeHint">Beam 宽度</span>
-                <input id="beamSize" type="number" min="1" max="10" step="1">
-              </label>
-              <label class="field">
-                <span data-i18n="filterText" data-i18n-title="filterTextHint">过滤文本</span>
-                <input id="filterText" type="text" placeholder="regex, one or comma separated">
-              </label>
-            </div>
-          </section>
+              <div class="toggle-grid">
+                <label class="check-field">
+                  <input id="preInvert" type="checkbox">
+                  <span data-i18n="preInvert" data-i18n-title="preInvertHint">反相检测</span>
+                </label>
+                <label class="check-field">
+                  <input id="preGamma" type="checkbox">
+                  <span data-i18n="preGamma" data-i18n-title="preGammaHint">Gamma 校正</span>
+                </label>
+                <label class="check-field">
+                  <input id="preRotate" type="checkbox">
+                  <span data-i18n="preRotate" data-i18n-title="preRotateHint">旋转检测</span>
+                </label>
+                <label class="check-field">
+                  <input id="preAutoRotate" type="checkbox">
+                  <span data-i18n="preAutoRotate" data-i18n-title="preAutoRotateHint">自动旋转</span>
+                </label>
+              </div>
 
-          <section class="config-tab-panel" data-panel="inpaint" role="tabpanel" hidden>
-            <div class="form-grid compact">
-              <label class="field">
-                <span data-i18n="maskMethod" data-i18n-title="maskMethodHint">Mask 方法</span>
-                <select id="maskMethod">
-                  <option value="FitText">FitText</option>
-                  <option value="FillMask">FillMask</option>
-                </select>
-              </label>
-              <label class="field">
-                <span data-i18n="ignoreBubble" data-i18n-title="ignoreBubbleHint">忽略气泡</span>
-                <input id="ignoreBubble" type="number" min="0" max="50" step="1">
-              </label>
+              <p class="group-label" data-i18n="ocrSection">OCR</p>
+              <div class="form-grid compact">
+                <label class="field">
+                  <span data-i18n="ocrModel">OCR 模型</span>
+                  <select id="ocrModel">
+                    <option value="Ocr48px">Ocr48px</option>
+                    <option value="Ctc48px">Ctc48px</option>
+                    <option value="MangaOcr">Manga OCR</option>
+                    <option value="Native">Native</option>
+                    <option value="Tesseract">Tesseract</option>
+                  </select>
+                  <small class="model-hint" id="ocrHint"></small>
+                </label>
+                <label class="field">
+                  <span data-i18n="minTextLength" data-i18n-title="minTextLengthHint">最短文本</span>
+                  <input id="minTextLength" type="number" min="0" max="100" step="1">
+                </label>
+              </div>
+              <div class="form-grid compact">
+                <label class="field">
+                  <span data-i18n="ocrProb" data-i18n-title="ocrProbHint">OCR 置信度</span>
+                  <input id="ocrProb" type="number" min="0" max="1" step="0.05">
+                </label>
+                <label class="field">
+                  <span data-i18n="beamSize" data-i18n-title="beamSizeHint">Beam 宽度</span>
+                  <input id="beamSize" type="number" min="1" max="10" step="1">
+                </label>
+                <label class="field">
+                  <span data-i18n="filterText" data-i18n-title="filterTextHint">过滤文本</span>
+                  <input id="filterText" type="text" placeholder="regex, one or comma separated">
+                </label>
+              </div>
             </div>
-            <div class="form-grid compact">
-              <label class="field">
-                <span data-i18n="dilationOffset" data-i18n-title="dilationOffsetHint">膨胀偏移</span>
-                <input id="dilationOffset" type="number" min="0" max="120" step="1">
-              </label>
-              <label class="field">
-                <span data-i18n="kernelSize" data-i18n-title="kernelSizeHint">Kernel Size</span>
-                <input id="kernelSize" type="number" min="1" max="31" step="1">
-              </label>
-            </div>
-            <label class="check-field">
-              <input id="furigana" type="checkbox">
-              <span data-i18n="furigana" data-i18n-title="furiganaHint">扩展假名遮罩</span>
-            </label>
-            <div class="form-grid compact">
-              <label class="field">
-                <span data-i18n="inpainter">修补模型</span>
-                <select id="inpainter">
-                  <option value="LamaAot">LamaAot</option>
-                  <option value="LamaLarge">LamaLarge</option>
-                  <option value="LamaMpe">LamaMpe</option>
-                </select>
-                <small class="model-hint" id="inpainterHint"></small>
-              </label>
-              <label class="field">
-                <span data-i18n="inpaintingSize" data-i18n-title="inpaintingSizeHint">修补尺寸</span>
-                <input id="inpaintingSize" type="number" min="512" max="4096" step="64">
-              </label>
-            </div>
-            <div class="form-grid compact">
-              <label class="field">
-                <span data-i18n="maskSource" data-i18n-title="maskSourceHint">覆盖 Mask</span>
-                <select id="maskSource">
-                  <option value="RefinedMask">RefinedMask</option>
-                  <option value="Mask">Raw Mask</option>
-                  <option value="Both">Both</option>
-                </select>
-              </label>
-              <label class="field">
-                <span data-i18n="inpaintColor">填充颜色</span>
-                <input id="inpaintColor" type="color">
-              </label>
-            </div>
-          </section>
+          </details>
 
-          <section class="config-tab-panel" data-panel="upscale" role="tabpanel" hidden>
-            <div class="form-grid compact">
+          <!-- 修补 / Mask -->
+          <details class="acc">
+            <summary class="acc-head">
+              <span data-i18n="tabInpaintMask">修补 / Mask</span>
+              <svg class="acc-chev" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6" /></svg>
+            </summary>
+            <div class="acc-body">
+              <div class="form-grid compact">
+                <label class="field">
+                  <span data-i18n="maskMethod" data-i18n-title="maskMethodHint">Mask 方法</span>
+                  <select id="maskMethod">
+                    <option value="FitText">FitText</option>
+                    <option value="FillMask">FillMask</option>
+                  </select>
+                </label>
+                <label class="field">
+                  <span data-i18n="ignoreBubble" data-i18n-title="ignoreBubbleHint">忽略气泡</span>
+                  <input id="ignoreBubble" type="number" min="0" max="50" step="1">
+                </label>
+              </div>
+              <div class="form-grid compact">
+                <label class="field">
+                  <span data-i18n="dilationOffset" data-i18n-title="dilationOffsetHint">膨胀偏移</span>
+                  <input id="dilationOffset" type="number" min="0" max="120" step="1">
+                </label>
+                <label class="field">
+                  <span data-i18n="kernelSize" data-i18n-title="kernelSizeHint">Kernel Size</span>
+                  <input id="kernelSize" type="number" min="1" max="31" step="1">
+                </label>
+              </div>
+              <label class="check-field">
+                <input id="furigana" type="checkbox">
+                <span data-i18n="furigana" data-i18n-title="furiganaHint">扩展假名遮罩</span>
+              </label>
+              <div class="form-grid compact">
+                <label class="field">
+                  <span data-i18n="inpainter">修补模型</span>
+                  <select id="inpainter">
+                    <option value="LamaAot">LamaAot</option>
+                    <option value="LamaLarge">LamaLarge</option>
+                    <option value="LamaMpe">LamaMpe</option>
+                  </select>
+                  <small class="model-hint" id="inpainterHint"></small>
+                </label>
+                <label class="field">
+                  <span data-i18n="inpaintingSize" data-i18n-title="inpaintingSizeHint">修补尺寸</span>
+                  <input id="inpaintingSize" type="number" min="512" max="4096" step="64">
+                </label>
+              </div>
+              <div class="form-grid compact">
+                <label class="field">
+                  <span data-i18n="maskSource" data-i18n-title="maskSourceHint">覆盖 Mask</span>
+                  <select id="maskSource">
+                    <option value="RefinedMask">RefinedMask</option>
+                    <option value="Mask">Raw Mask</option>
+                    <option value="Both">Both</option>
+                  </select>
+                </label>
+                <label class="field">
+                  <span data-i18n="inpaintColor">填充颜色</span>
+                  <input id="inpaintColor" type="color">
+                </label>
+              </div>
+            </div>
+          </details>
+
+          <!-- 放大 / 渲染 -->
+          <details class="acc">
+            <summary class="acc-head">
+              <span data-i18n="tabUpscaleRender">放大 / 渲染</span>
+              <svg class="acc-chev" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6" /></svg>
+            </summary>
+            <div class="acc-body">
+              <div class="form-grid compact">
+                <label class="field">
+                  <span data-i18n="upscaler">放大器</span>
+                  <select id="upscaler">
+                    <option value="none">关闭</option>
+                    <option value="Esrgan2x">ESRGAN 2x</option>
+                    <option value="Esrgan4x">ESRGAN 4x</option>
+                    <option value="EsrganAnime4x">ESRGAN Anime 4x</option>
+                    <option value="Anime4k">Anime4K</option>
+                    <option value="custom">保留 JSON 自定义</option>
+                  </select>
+                  <small class="model-hint" id="upscalerHint"></small>
+                </label>
+                <label class="field">
+                  <span data-i18n="upscalePatch" data-i18n-title="upscalePatchHint">Patch Size</span>
+                  <input id="upscalePatch" type="number" min="0" max="4096" step="16">
+                </label>
+              </div>
               <label class="field">
-                <span data-i18n="upscaler">放大器</span>
-                <select id="upscaler">
-                  <option value="none">关闭</option>
-                  <option value="Esrgan2x">ESRGAN 2x</option>
-                  <option value="Esrgan4x">ESRGAN 4x</option>
-                  <option value="EsrganAnime4x">ESRGAN Anime 4x</option>
-                  <option value="Anime4k">Anime4K</option>
-                  <option value="custom">保留 JSON 自定义</option>
-                </select>
-                <small class="model-hint" id="upscalerHint"></small>
+                <span data-i18n="upscalePadding" data-i18n-title="upscalePaddingHint">Padding</span>
+                <input id="upscalePadding" type="number" min="0" max="512" step="1">
               </label>
               <label class="field">
-                <span data-i18n="upscalePatch" data-i18n-title="upscalePatchHint">Patch Size</span>
-                <input id="upscalePatch" type="number" min="0" max="4096" step="16">
+                <span data-i18n="textDirection" data-i18n-title="textDirectionHint">文字方向</span>
+                <select id="textDirection">
+                  <option value="auto" selected data-i18n="textDirectionAuto">自动</option>
+                  <option value="horizontal" data-i18n="textDirectionHorizontal">横排</option>
+                  <option value="vertical" data-i18n="textDirectionVertical">竖排</option>
+                </select>
               </label>
             </div>
-            <label class="field">
-              <span data-i18n="upscalePadding" data-i18n-title="upscalePaddingHint">Padding</span>
-              <input id="upscalePadding" type="number" min="0" max="512" step="1">
-            </label>
-            <label class="field">
-              <span data-i18n="textDirection" data-i18n-title="textDirectionHint">文字方向</span>
-              <select id="textDirection">
-                <option value="auto" selected data-i18n="textDirectionAuto">自动</option>
-                <option value="horizontal" data-i18n="textDirectionHorizontal">横排</option>
-                <option value="vertical" data-i18n="textDirectionVertical">竖排</option>
-              </select>
-            </label>
-          </section>
+          </details>
+
+          <!-- 输出 -->
+          <details class="acc">
+            <summary class="acc-head">
+              <span data-i18n="outputGroup">输出</span>
+              <svg class="acc-chev" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6" /></svg>
+            </summary>
+            <div class="acc-body">
+              <div class="form-grid">
+                <label class="field">
+                  <span data-i18n="outputDir">导出目录</span>
+                  <div class="path-picker">
+                    <input id="outputDir" type="text" readonly placeholder="未选择">
+                    <button id="pickOutputDir" type="button" class="icon-button" aria-label="Choose output directory" title="Choose output directory">
+                      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7.5A2.5 2.5 0 0 1 5.5 5H10l2 2h6.5A2.5 2.5 0 0 1 21 9.5v7A2.5 2.5 0 0 1 18.5 19h-13A2.5 2.5 0 0 1 3 16.5v-9Z" /></svg>
+                    </button>
+                  </div>
+                </label>
+                <label class="field">
+                  <span data-i18n="outputFormat">输出格式</span>
+                  <select id="outputFormat">
+                    <option value="png" selected>PNG</option>
+                    <option value="html">HTML</option>
+                    <option value="raw">Raw MIT</option>
+                  </select>
+                </label>
+              </div>
+            </div>
+          </details>
+
+          <!-- 运行 -->
+          <details class="acc">
+            <summary class="acc-head">
+              <span data-i18n="runtimeGroup">运行</span>
+              <svg class="acc-chev" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6" /></svg>
+            </summary>
+            <div class="acc-body">
+              <div class="runtime-status">
+                <div id="cudaErrorWrap" class="cuda-hint hidden">
+                  <span id="cudaErrorSummary" class="cuda-hint-text"></span>
+                  <button id="cudaErrorToggle" class="link-button" type="button" data-i18n="cudaDetails">详情</button>
+                </div>
+                <pre id="cudaErrorDetail" class="cuda-detail hidden"></pre>
+              </div>
+              <div class="toggle-grid">
+                <label class="check-field compact-check" data-i18n-title="requireCudaHint">
+                  <input id="requireCuda" type="checkbox">
+                  <span data-i18n="requireCuda">强制 CUDA</span>
+                </label>
+                <label class="check-field compact-check" data-i18n-title="debugModeHint">
+                  <input id="debugMode" type="checkbox">
+                  <span data-i18n="debugMode">调试输出</span>
+                </label>
+              </div>
+              <div class="form-grid compact">
+                <label class="field">
+                  <span data-i18n="maxParallelImages">图片并发</span>
+                  <input id="maxParallelImages" type="number" min="1" max="8" step="1" value="2">
+                </label>
+                <label class="field">
+                  <span data-i18n="maxParallelGpuJobs">GPU 并发</span>
+                  <input id="maxParallelGpuJobs" type="number" min="1" max="4" step="1" value="1">
+                </label>
+              </div>
+            </div>
+          </details>
+
+          <details class="json-details">
+            <summary data-i18n="advancedJson">高级 JSON</summary>
+            <textarea id="settingsJson" spellcheck="false"></textarea>
+          </details>
         </div>
-
-        <details class="json-details">
-          <summary data-i18n="advancedJson">高级 JSON</summary>
-          <textarea id="settingsJson" spellcheck="false"></textarea>
-        </details>
       </aside>
     </div>
 
-    <section class="runbar" aria-label="Run translation">
-      <div class="runbar-status">
+    <!-- ───────────────────────── STATUS BAR ───────────────────────── -->
+    <footer class="statusbar">
+      <div class="statusbar-info">
         <strong id="statusTitle" data-i18n="readyTitle">准备就绪</strong>
-        <p id="statusText" data-i18n="readyText">选择输入与输出目录后即可开始。</p>
-        <div class="progress-wrap" aria-live="polite">
-          <div class="progress-track">
-            <div id="progressBar" class="progress-bar"></div>
-          </div>
-          <span id="progressLabel" data-i18n="progressIdle">等待任务</span>
-        </div>
+        <span id="statusText" data-i18n="readyText">选择输入与输出目录后即可开始。</span>
       </div>
-      <button id="startTranslation" class="primary-button" type="button">
-        <span class="btn-spinner" aria-hidden="true"></span>
-        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m8 5 11 7-11 7V5Z" /></svg>
-        <span class="start-label">开始翻译</span>
-      </button>
-    </section>
-
-    <section class="results-layout">
-      <div class="panel results-panel">
-        <div class="panel-heading compact">
-          <div>
-            <h2 data-i18n="resultTitle">预览与导出</h2>
-            <p id="resultStats" class="panel-meta" data-i18n="resultStatsEmpty">暂无结果</p>
-          </div>
-          <div class="result-actions">
-            <button id="selectAllResults" class="ghost-button" type="button" data-i18n="selectAllResults">全选</button>
-            <button id="exportSelected" class="secondary-button" type="button" data-i18n="exportSelected">导出选中</button>
-          </div>
+      <div class="progress-wrap" aria-live="polite">
+        <div class="progress-track">
+          <div id="progressBar" class="progress-bar"></div>
         </div>
-        <div id="results" class="empty-state" data-i18n="resultEmpty">暂无结果。完成翻译后可预览图片，并选择导出到指定目录。</div>
+        <span id="progressLabel" data-i18n="progressIdle">等待任务</span>
       </div>
-
-      <div class="panel log-panel">
-        <div class="panel-heading compact">
-          <div>
-            <h2 data-i18n="logTitle">运行记录</h2>
-          </div>
+      <div class="statusbar-log">
+        <div class="statusbar-log-head">
+          <h2 data-i18n="logTitle">运行记录</h2>
           <button id="clearLog" class="ghost-button" type="button" data-i18n="clearLog">清空</button>
         </div>
         <div id="logList" class="log-list" aria-live="polite"></div>
       </div>
-    </section>
+    </footer>
   </main>
 
   <script>
