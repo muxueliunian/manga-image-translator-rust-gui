@@ -4,7 +4,7 @@ const i18n = {
     subtitle: "本地漫画页翻译与导出",
     inputTitle: "输入队列",
     inputStatsEmpty: "0 项 · 0 文件 · 0 文件夹",
-    inputStats: "{total} 项 · {files} 文件 · {folders} 文件夹",
+    inputStats: "{total} 项 · {files} 文件 · {folders} 文件夹 · 勾选 {checked}",
     pickImages: "添加图片",
     pickFolder: "添加文件夹",
     clearInputs: "清空",
@@ -14,6 +14,7 @@ const i18n = {
     treeEmpty: "尚未导入。点顶部「添加图片 / 添加文件夹」导入。",
     treeLoading: "正在读取…",
     treeFolderEmpty: "（无图片）",
+    noCheckedSelection: "请先勾选要翻译的图片。",
     outputGroup: "输出",
     runtimeGroup: "运行",
     outputDir: "导出目录",
@@ -168,7 +169,7 @@ const i18n = {
     subtitle: "Local manga page translation and export",
     inputTitle: "Input Queue",
     inputStatsEmpty: "0 items · 0 files · 0 folders",
-    inputStats: "{total} items · {files} files · {folders} folders",
+    inputStats: "{total} items · {files} files · {folders} folders · {checked} checked",
     pickImages: "Add Images",
     pickFolder: "Add Folders",
     clearInputs: "Clear",
@@ -178,6 +179,7 @@ const i18n = {
     treeEmpty: "Nothing imported yet. Use Add Images / Add Folders above.",
     treeLoading: "Reading…",
     treeFolderEmpty: "(no images)",
+    noCheckedSelection: "Check at least one image to translate first.",
     outputGroup: "Output",
     runtimeGroup: "Runtime",
     outputDir: "Export Directory",
@@ -368,6 +370,14 @@ const state = {
   lang: localStorage.getItem("mitWebviewLang") || "zh",
   theme: localStorage.getItem("mitWebviewTheme") || "dark",
   tree: [],
+  // Translation selection = checked image files. Keyed by normalized path,
+  // value is the original on-disk path (what the backend needs).
+  checked: new Map(),
+  // Cache of a folder's full recursive image leaves (original paths), so the
+  // tristate checkbox can be computed without re-enumerating on every render.
+  folderLeaves: new Map(),
+  activePath: "",
+  preview: "",
   outputDir: "",
   results: [],
   selectedResults: new Set(),
@@ -605,7 +615,7 @@ function applyLang() {
     startLabel.textContent = t("start");
   }
   renderTree();
-  renderResults();
+  renderCanvas();
   renderLogEmptyState();
   refreshGuidance();
 }
@@ -671,8 +681,84 @@ function findNode(path, nodes = state.tree) {
   return null;
 }
 
-function rootPaths() {
-  return state.tree.map((node) => node.path);
+function isChecked(path) {
+  return state.checked.has(normalizePathKey(path));
+}
+
+function setChecked(path, on) {
+  const key = normalizePathKey(path);
+  if (on) state.checked.set(key, path);
+  else state.checked.delete(key);
+}
+
+function isUnder(child, parent) {
+  if (!child || !parent) return false;
+  return normalizePathKey(child).startsWith(`${normalizePathKey(parent)}/`);
+}
+
+// Drop a removed path (and anything beneath it) from the selection and caches.
+function pruneSelection(path) {
+  const key = normalizePathKey(path);
+  const prefix = `${key}/`;
+  for (const k of [...state.checked.keys()]) {
+    if (k === key || k.startsWith(prefix)) state.checked.delete(k);
+  }
+  for (const k of [...state.folderLeaves.keys()]) {
+    if (k === key || k.startsWith(prefix)) state.folderLeaves.delete(k);
+  }
+}
+
+// Recursively list a folder's image files (original paths), caching the result
+// for the folder and every nested subfolder so tristate stays cheap.
+async function enumerateFolderImages(dirPath) {
+  const cached = state.folderLeaves.get(normalizePathKey(dirPath));
+  if (cached) return cached;
+  const data = await invoke("listDir", { path: dirPath });
+  let leaves = [];
+  for (const entry of data.entries || []) {
+    if (entry.is_dir) {
+      leaves = leaves.concat(await enumerateFolderImages(entry.path));
+    } else if (entry.is_image) {
+      leaves.push(entry.path);
+    }
+  }
+  state.folderLeaves.set(normalizePathKey(dirPath), leaves);
+  return leaves;
+}
+
+// Count {checked, total} image leaves under a folder, preferring the live
+// loaded subtree and falling back to the recursive enumeration cache.
+function folderLeafCounts(node) {
+  if (node.loaded && Array.isArray(node.children)) {
+    let checked = 0;
+    let total = 0;
+    for (const child of node.children) {
+      if (child.isDir) {
+        const sub = folderLeafCounts(child);
+        checked += sub.checked;
+        total += sub.total;
+      } else {
+        total += 1;
+        if (isChecked(child.path)) checked += 1;
+      }
+    }
+    return { checked, total };
+  }
+  const leaves = state.folderLeaves.get(normalizePathKey(node.path));
+  if (leaves) {
+    let checked = 0;
+    for (const p of leaves) if (isChecked(p)) checked += 1;
+    return { checked, total: leaves.length };
+  }
+  return { checked: 0, total: 0 };
+}
+
+// Tristate for a folder checkbox: "all" / "partial" / "none".
+function folderCheckState(node) {
+  const { checked, total } = folderLeafCounts(node);
+  if (total === 0 || checked === 0) return "none";
+  if (checked >= total) return "all";
+  return "partial";
 }
 
 function countInputKinds() {
@@ -690,7 +776,7 @@ function renderInputStats() {
   els.inputStats.textContent =
     counts.total === 0
       ? t("inputStatsEmpty")
-      : t("inputStats", counts);
+      : t("inputStats", { ...counts, checked: state.checked.size });
 }
 
 async function copyText(text) {
@@ -828,6 +914,12 @@ function renderTree() {
   root.className = "tree";
   state.tree.forEach((node) => root.append(renderNode(node, 0, true)));
   els.inputList.append(root);
+  // Indeterminate can't be set via an HTML attribute; apply it post-render.
+  els.inputList
+    .querySelectorAll('input.tree-check[data-check="partial"]')
+    .forEach((cb) => {
+      cb.indeterminate = true;
+    });
 }
 
 function renderNode(node, depth, isRoot) {
@@ -836,19 +928,26 @@ function renderNode(node, depth, isRoot) {
   wrap.style.setProperty("--depth", String(depth));
 
   const row = document.createElement("div");
-  row.className = "tree-row";
+  row.className = `tree-row${node.isDir ? " is-dir" : " is-file"}`;
+  if (node.path === state.activePath) row.classList.add("is-active");
   row.dataset.path = node.path;
   row.title = node.path;
 
   const chevron = node.isDir
     ? `<span class="tree-chevron${node.expanded ? " is-open" : ""}" data-action="toggle">${ICON_CHEVRON}</span>`
     : '<span class="tree-chevron is-leaf"></span>';
+  const checkState = node.isDir
+    ? folderCheckState(node)
+    : isChecked(node.path)
+      ? "all"
+      : "none";
+  const checkbox = `<input type="checkbox" class="tree-check" data-check="${checkState}"${checkState === "all" ? " checked" : ""}${node.checkLoading ? " disabled" : ""}>`;
   const icon = `<span class="tree-icon">${node.isDir ? ICON_FOLDER : ICON_FILE}</span>`;
   const name = `<span class="tree-name"${node.isDir ? ' data-action="toggle"' : ""}>${escapeHtml(node.name)}</span>`;
   const remove = isRoot
     ? `<button type="button" class="tiny-button tree-remove" data-action="remove">${escapeHtml(t("remove"))}</button>`
     : "";
-  row.innerHTML = chevron + icon + name + remove;
+  row.innerHTML = chevron + checkbox + icon + name + remove;
   wrap.append(row);
 
   if (node.isDir && node.expanded) {
@@ -890,6 +989,35 @@ async function toggleNode(node) {
   }
 }
 
+// Checkbox toggle (independent of single-click preview). A folder check
+// recursively enumerates its image leaves and selects/deselects them all.
+async function toggleCheck(node, desired) {
+  if (!node.isDir) {
+    setChecked(node.path, desired);
+    renderTree();
+    return;
+  }
+  node.checkLoading = true;
+  renderTree();
+  try {
+    const leaves = await enumerateFolderImages(node.path);
+    leaves.forEach((p) => setChecked(p, desired));
+  } catch (err) {
+    addLog("error", err.message);
+  } finally {
+    node.checkLoading = false;
+    renderTree();
+  }
+}
+
+// Single-click a tree row → mark it active and preview it on the canvas.
+function selectAndPreview(node) {
+  state.activePath = node.path;
+  state.preview = node.path;
+  renderTree();
+  renderCanvas();
+}
+
 function addRoots(paths, isDir) {
   const before = state.tree.length;
   const seen = new Set(state.tree.map((node) => normalizePathKey(node.path)));
@@ -909,13 +1037,24 @@ function normalizePathKey(path) {
 
 function removeRoot(path) {
   state.tree = state.tree.filter((node) => node.path !== path);
+  pruneSelection(path);
+  if (state.activePath === path || isUnder(state.activePath, path)) state.activePath = "";
+  if (state.preview === path || isUnder(state.preview, path)) {
+    state.preview = "";
+    renderCanvas();
+  }
   renderTree();
   setStatus(t("selected"), `${state.tree.length} ${t("selected")}`);
 }
 
 function clearInputs() {
   state.tree = [];
+  state.checked.clear();
+  state.folderLeaves.clear();
+  state.activePath = "";
+  state.preview = "";
   renderTree();
+  renderCanvas();
   setStatus(t("readyTitle"), t("readyText"));
 }
 
@@ -1287,7 +1426,12 @@ async function startTranslation() {
     return;
   }
 
-  const inputs = rootPaths();
+  const inputs = [...state.checked.values()];
+  if (!inputs.length) {
+    setStatus(t("noCheckedSelection"), "");
+    addLog("error", t("noCheckedSelection"));
+    return;
+  }
   try {
     setRunningState(true);
     updateProgress({ current: 0, total: inputs.length || 1, message: t("progressPreparing") });
@@ -1313,8 +1457,115 @@ async function startTranslation() {
   }
 }
 
+// The canvas shows a single-click preview when one is active; otherwise it
+// falls back to the translation results view (P4 will merge these fully).
+function renderCanvas() {
+  if (state.preview) {
+    els.results.className = "canvas-preview";
+    els.results.innerHTML = "";
+    const viewport = document.createElement("div");
+    viewport.className = "canvas-viewport";
+    const img = document.createElement("img");
+    img.className = "canvas-img";
+    img.alt = "";
+    img.draggable = false;
+    viewport.append(img);
+    els.results.append(viewport);
+    setupImageViewer(viewport, img);
+    loadLocalImage(img, state.preview);
+    return;
+  }
+  renderResults();
+}
+
+// Lightweight pan/zoom for the preview canvas (no library). The image starts
+// fit-to-view (aspect preserved, fully visible); wheel zooms toward the cursor,
+// drag pans, double-click re-fits. Translate/scale via a single CSS transform.
+function setupImageViewer(viewport, img) {
+  const view = { scale: 1, base: 1, tx: 0, ty: 0, natW: 0, natH: 0 };
+
+  const apply = () => {
+    img.style.transform = `translate(${view.tx}px, ${view.ty}px) scale(${view.scale})`;
+  };
+  const fit = () => {
+    const vw = viewport.clientWidth;
+    const vh = viewport.clientHeight;
+    view.natW = img.naturalWidth || vw;
+    view.natH = img.naturalHeight || vh;
+    view.base = Math.min(vw / view.natW, vh / view.natH) || 1;
+    view.scale = view.base;
+    view.tx = (vw - view.natW * view.scale) / 2;
+    view.ty = (vh - view.natH * view.scale) / 2;
+    apply();
+  };
+
+  img.addEventListener("load", fit);
+
+  viewport.addEventListener(
+    "wheel",
+    (event) => {
+      event.preventDefault();
+      if (!view.natW) return;
+      const rect = viewport.getBoundingClientRect();
+      const cx = event.clientX - rect.left;
+      const cy = event.clientY - rect.top;
+      const factor = event.deltaY < 0 ? 1.12 : 1 / 1.12;
+      const next = Math.max(view.base, Math.min(view.base * 12, view.scale * factor));
+      if (next === view.scale) return;
+      // Keep the image point under the cursor fixed while zooming.
+      view.tx = cx - (cx - view.tx) * (next / view.scale);
+      view.ty = cy - (cy - view.ty) * (next / view.scale);
+      view.scale = next;
+      apply();
+    },
+    { passive: false },
+  );
+
+  let dragging = false;
+  let startX = 0;
+  let startY = 0;
+  let baseTx = 0;
+  let baseTy = 0;
+  viewport.addEventListener("pointerdown", (event) => {
+    dragging = true;
+    startX = event.clientX;
+    startY = event.clientY;
+    baseTx = view.tx;
+    baseTy = view.ty;
+    viewport.setPointerCapture(event.pointerId);
+    viewport.classList.add("is-grabbing");
+  });
+  viewport.addEventListener("pointermove", (event) => {
+    if (!dragging) return;
+    view.tx = baseTx + (event.clientX - startX);
+    view.ty = baseTy + (event.clientY - startY);
+    apply();
+  });
+  const endDrag = (event) => {
+    if (!dragging) return;
+    dragging = false;
+    try {
+      viewport.releasePointerCapture(event.pointerId);
+    } catch (_) {}
+    viewport.classList.remove("is-grabbing");
+  };
+  viewport.addEventListener("pointerup", endDrag);
+  viewport.addEventListener("pointercancel", endDrag);
+  viewport.addEventListener("dblclick", fit);
+
+  // Re-fit on container resize only while still at the fit scale, so resizing
+  // the window doesn't fight a zoom the user set.
+  if (window.ResizeObserver) {
+    new ResizeObserver(() => {
+      if (Math.abs(view.scale - view.base) < 1e-3) fit();
+    }).observe(viewport);
+  }
+}
+
 function renderResult(result) {
   const outputs = Array.isArray(result.outputs) ? result.outputs : [];
+  // Translation results take over the canvas from any single-click preview.
+  state.preview = "";
   state.results = outputs;
   state.selectedResults = new Set(
     outputs
@@ -1344,6 +1595,9 @@ function renderResults(result = null) {
     : "";
   const rows = state.results.map((item, index) => resultCard(item, index)).join("");
   els.results.innerHTML = `${summary}<div class="result-grid">${rows}</div>`;
+  els.results
+    .querySelectorAll("img[data-localpath]")
+    .forEach((img) => loadLocalImage(img, img.dataset.localpath));
 
   const doneOutputs = state.results.filter((item) => item.status === "done" && item.output);
   const allSelected =
@@ -1357,7 +1611,7 @@ function resultCard(item, index) {
   const canUse = item.status === "done" && output;
   const status = item.status || "";
   const thumb = canUse && output.toLowerCase().endsWith(".png")
-    ? `<div class="result-thumb"><img alt="" src="${escapeHtml(fileUrl(output))}"></div>`
+    ? `<div class="result-thumb"><img alt="" data-localpath="${escapeAttr(output)}"></div>`
     : `<div class="result-thumb">${escapeHtml(statusLabel(status))}</div>`;
   const message = item.message ? summarizeText(item.message, 80) : "";
   return `
@@ -1377,8 +1631,16 @@ function resultCard(item, index) {
   `;
 }
 
-function fileUrl(path) {
-  return `file:///${String(path).replaceAll("\\", "/").split("/").map(encodeURIComponent).join("/")}`;
+// WebView2 won't load file:// or custom-scheme images as subresources from a
+// mit:// page, so local images come back through the ReadImage IPC as a data:
+// URL and get dropped into the given <img>.
+async function loadLocalImage(img, path) {
+  try {
+    const data = await invoke("readImage", { path });
+    if (data && data.data_url) img.src = data.data_url;
+  } catch (err) {
+    addLog("error", `${pathBaseName(path)}: ${err.message}`);
+  }
 }
 
 async function previewResult(index) {
@@ -1601,7 +1863,16 @@ async function bootstrap() {
   els.startTranslation.addEventListener("click", startTranslation);
   els.selectAllResults.addEventListener("click", toggleAllResults);
   els.exportSelected.addEventListener("click", exportSelectedResults);
+  els.inputList.addEventListener("change", (event) => {
+    const cb = event.target.closest("input.tree-check");
+    if (!cb) return;
+    const row = event.target.closest(".tree-row");
+    const node = row && findNode(row.dataset.path);
+    if (node) toggleCheck(node, cb.checked);
+  });
   els.inputList.addEventListener("click", (event) => {
+    // Checkbox is handled by the change listener; keep click independent.
+    if (event.target.closest("input.tree-check")) return;
     const row = event.target.closest(".tree-row");
     if (!row) return;
     const node = findNode(row.dataset.path);
@@ -1611,8 +1882,10 @@ async function bootstrap() {
       removeRoot(node.path);
     } else if (action === "toggle" || node.isDir) {
       toggleNode(node);
+    } else {
+      // File row: single-click selects and previews on the canvas.
+      selectAndPreview(node);
     }
-    // File-row click → canvas preview arrives in P3b.
   });
   els.results.addEventListener("click", (event) => {
     const previewIndex = event.target?.dataset?.previewIndex;

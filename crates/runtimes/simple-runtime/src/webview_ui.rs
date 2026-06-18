@@ -71,6 +71,7 @@ enum IpcKind {
     PreviewResult,
     ExportResults,
     ListDir,
+    ReadImage,
 }
 
 #[derive(Debug, Serialize)]
@@ -168,6 +169,11 @@ struct ListDirPayload {
     path: PathBuf,
 }
 
+#[derive(Deserialize)]
+struct ReadImagePayload {
+    path: PathBuf,
+}
+
 #[derive(Serialize)]
 struct DirEntryInfo {
     name: String,
@@ -220,6 +226,10 @@ pub fn run() -> Result<()> {
 
     let webview = WebViewBuilder::new()
         .with_custom_protocol("mit".into(), move |_webview_id, _request| {
+            // Only the page itself is served here. Local image bytes can't be loaded
+            // as `<img>` subresources from a `mit://` page (WebView2 blocks `file://`,
+            // and custom-scheme subresource fetches are dropped), so previews/thumbnails
+            // go through the `ReadImage` IPC and render as `data:` URLs instead.
             Response::builder()
                 .header(CONTENT_TYPE, "text/html; charset=utf-8")
                 .body(build_html().into_bytes())
@@ -274,6 +284,58 @@ fn build_html() -> String {
     INDEX_HTML
         .replace("<!-- MIT_WEBVIEW_STYLES -->", STYLES_CSS)
         .replace("/* MIT_WEBVIEW_APP */", APP_JS)
+}
+
+/// Read a local image and return it as a `data:` URL for the frontend to drop into
+/// an `<img src>`. WebView2 won't fetch `file://` or custom-scheme subresources from
+/// a `mit://` page, so the bytes are base64-inlined instead.
+fn read_image_data_url(path: &Path) -> Result<serde_json::Value> {
+    let bytes = std::fs::read(path).map_err(|err| anyhow!("Failed to read image: {err}"))?;
+    let data_url = format!("data:{};base64,{}", mime_for(path), base64_encode(&bytes));
+    Ok(serde_json::json!({ "data_url": data_url }))
+}
+
+/// Minimal standard base64 encoder (with padding); avoids pulling in a crate.
+fn base64_encode(input: &[u8]) -> String {
+    const ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut out = String::with_capacity((input.len() + 2) / 3 * 4);
+    for chunk in input.chunks(3) {
+        let b0 = chunk[0] as u32;
+        let b1 = *chunk.get(1).unwrap_or(&0) as u32;
+        let b2 = *chunk.get(2).unwrap_or(&0) as u32;
+        let n = (b0 << 16) | (b1 << 8) | b2;
+        out.push(ALPHABET[(n >> 18) as usize & 0x3f] as char);
+        out.push(ALPHABET[(n >> 12) as usize & 0x3f] as char);
+        out.push(if chunk.len() > 1 {
+            ALPHABET[(n >> 6) as usize & 0x3f] as char
+        } else {
+            '='
+        });
+        out.push(if chunk.len() > 2 {
+            ALPHABET[n as usize & 0x3f] as char
+        } else {
+            '='
+        });
+    }
+    out
+}
+
+fn mime_for(path: &Path) -> &'static str {
+    match path
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .map(|ext| ext.to_ascii_lowercase())
+        .as_deref()
+    {
+        Some("png") => "image/png",
+        Some("jpg") | Some("jpeg") => "image/jpeg",
+        Some("webp") => "image/webp",
+        Some("gif") => "image/gif",
+        Some("bmp") => "image/bmp",
+        Some("tif") | Some("tiff") => "image/tiff",
+        Some("avif") => "image/avif",
+        _ => "application/octet-stream",
+    }
 }
 
 fn handle_ipc_message(
@@ -380,6 +442,11 @@ fn handle_ipc_request(request: &IpcRequest) -> Result<serde_json::Value> {
             let payload = serde_json::from_value::<ListDirPayload>(request.payload.clone())
                 .map_err(|err| anyhow!("Invalid listDir payload: {err}"))?;
             to_value(list_dir(&payload.path)?)
+        }
+        IpcKind::ReadImage => {
+            let payload = serde_json::from_value::<ReadImagePayload>(request.payload.clone())
+                .map_err(|err| anyhow!("Invalid readImage payload: {err}"))?;
+            read_image_data_url(&payload.path).and_then(to_value)
         }
         IpcKind::StartTranslation => unreachable!("handled asynchronously"),
     }

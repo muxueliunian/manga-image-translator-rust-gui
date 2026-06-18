@@ -1476,6 +1476,61 @@ svg {
   font-size: 11px;
 }
 
+/* ── File tree checkboxes + active selection (P3b) ── */
+.tree-check {
+  flex: 0 0 auto;
+  width: 14px;
+  height: 14px;
+  min-height: 14px;
+  margin: 0;
+  padding: 0;
+  cursor: pointer;
+  accent-color: var(--accent);
+}
+
+.tree-row.is-file {
+  cursor: pointer;
+}
+
+.tree-row.is-active {
+  background: var(--accent-soft);
+}
+
+.tree-row.is-active .tree-name {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+/* ── Canvas single-click preview + pan/zoom viewer (P3b/P4) ── */
+.canvas-preview {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+}
+
+.canvas-viewport {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  cursor: grab;
+  touch-action: none;
+}
+
+.canvas-viewport.is-grabbing {
+  cursor: grabbing;
+}
+
+.canvas-img {
+  position: absolute;
+  top: 0;
+  left: 0;
+  transform-origin: 0 0;
+  user-select: none;
+  -webkit-user-drag: none;
+  will-change: transform;
+}
+
 /* Narrow windows (min 960): collapse the inspector to keep the canvas usable. */
 @media (max-width: 1080px) {
   .workspace {
