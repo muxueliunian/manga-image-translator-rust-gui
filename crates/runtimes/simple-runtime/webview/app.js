@@ -14,6 +14,9 @@ const i18n = {
     treeEmpty: "尚未导入。点顶部「添加图片 / 添加文件夹」导入。",
     treeLoading: "正在读取…",
     treeFolderEmpty: "（无图片）",
+    treeSearchPlaceholder: "过滤文件名…",
+    treeNoMatch: "无匹配项",
+    revealInExplorer: "在资源管理器中显示",
     noCheckedSelection: "请先勾选要翻译的图片。",
     outputGroup: "输出",
     runtimeGroup: "运行",
@@ -179,6 +182,9 @@ const i18n = {
     treeEmpty: "Nothing imported yet. Use Add Images / Add Folders above.",
     treeLoading: "Reading…",
     treeFolderEmpty: "(no images)",
+    treeSearchPlaceholder: "Filter by name…",
+    treeNoMatch: "No matches",
+    revealInExplorer: "Reveal in Explorer",
     noCheckedSelection: "Check at least one image to translate first.",
     outputGroup: "Output",
     runtimeGroup: "Runtime",
@@ -378,6 +384,9 @@ const state = {
   folderLeaves: new Map(),
   activePath: "",
   preview: "",
+  filter: "",
+  visibleNodes: [],
+  contextMenu: null,
   outputDir: "",
   results: [],
   selectedResults: new Set(),
@@ -409,6 +418,7 @@ const els = {
   maxParallelImages: document.getElementById("maxParallelImages"),
   maxParallelGpuJobs: document.getElementById("maxParallelGpuJobs"),
   inputList: document.getElementById("inputList"),
+  treeSearch: document.getElementById("treeSearch"),
   inputStats: document.getElementById("inputStats"),
   translator: document.getElementById("translator"),
   targetLang: document.getElementById("targetLang"),
@@ -606,6 +616,9 @@ function applyLang() {
   document.querySelectorAll("[data-i18n-title]").forEach((node) => {
     node.title = t(node.dataset.i18nTitle);
   });
+  document.querySelectorAll("[data-i18n-placeholder]").forEach((node) => {
+    node.placeholder = t(node.dataset.i18nPlaceholder);
+  });
   els.langToggle.textContent = state.lang === "zh" ? "English" : "中文";
   if (els.cudaErrorToggle && !els.cudaErrorWrap.classList.contains("hidden")) {
     els.cudaErrorToggle.textContent = state.cudaErrorExpanded ? t("cudaHide") : t("cudaDetails");
@@ -761,6 +774,34 @@ function folderCheckState(node) {
   return "partial";
 }
 
+function matchesFilter(node) {
+  return !state.filter || node.name.toLowerCase().includes(state.filter);
+}
+
+// Whether a node should render under the active name filter. A folder also shows
+// if any loaded descendant matches (so the path to a match stays visible). Lazy,
+// unloaded subtrees can only match by the folder's own name.
+function nodeVisible(node) {
+  if (!state.filter) return true;
+  if (matchesFilter(node)) return true;
+  if (node.isDir && Array.isArray(node.children)) {
+    return node.children.some((child) => nodeVisible(child));
+  }
+  return false;
+}
+
+// Parent node of `path`, or null for a root; undefined if not found.
+function findParent(path, nodes = state.tree, parent = null) {
+  for (const node of nodes) {
+    if (node.path === path) return parent;
+    if (node.children) {
+      const found = findParent(path, node.children, node);
+      if (found !== undefined) return found;
+    }
+  }
+  return undefined;
+}
+
 function countInputKinds() {
   let files = 0;
   let folders = 0;
@@ -910,9 +951,17 @@ function renderTree() {
   }
 
   els.inputList.classList.remove("is-empty");
+  // Rebuilt in render order so keyboard nav has the exact list of visible rows.
+  state.visibleNodes = [];
   const root = document.createElement("div");
   root.className = "tree";
-  state.tree.forEach((node) => root.append(renderNode(node, 0, true)));
+  const roots = state.tree.filter((node) => nodeVisible(node));
+  if (!roots.length) {
+    els.inputList.classList.add("is-empty");
+    els.inputList.textContent = t("treeNoMatch");
+    return;
+  }
+  roots.forEach((node) => root.append(renderNode(node, 0, true)));
   els.inputList.append(root);
   // Indeterminate can't be set via an HTML attribute; apply it post-render.
   els.inputList
@@ -923,6 +972,8 @@ function renderTree() {
 }
 
 function renderNode(node, depth, isRoot) {
+  state.visibleNodes.push(node);
+
   const wrap = document.createElement("div");
   wrap.className = "tree-node";
   wrap.style.setProperty("--depth", String(depth));
@@ -933,8 +984,10 @@ function renderNode(node, depth, isRoot) {
   row.dataset.path = node.path;
   row.title = node.path;
 
+  // A filter auto-expands folders that contain a match so the path stays visible.
+  const expanded = node.isDir && (node.expanded || (state.filter && !matchesFilter(node)));
   const chevron = node.isDir
-    ? `<span class="tree-chevron${node.expanded ? " is-open" : ""}" data-action="toggle">${ICON_CHEVRON}</span>`
+    ? `<span class="tree-chevron${expanded ? " is-open" : ""}" data-action="toggle">${ICON_CHEVRON}</span>`
     : '<span class="tree-chevron is-leaf"></span>';
   const checkState = node.isDir
     ? folderCheckState(node)
@@ -950,13 +1003,15 @@ function renderNode(node, depth, isRoot) {
   row.innerHTML = chevron + checkbox + icon + name + remove;
   wrap.append(row);
 
-  if (node.isDir && node.expanded) {
+  if (node.isDir && expanded) {
     const childWrap = document.createElement("div");
     childWrap.className = "tree-children";
     if (node.loading) {
       childWrap.innerHTML = `<div class="tree-hint">${escapeHtml(t("treeLoading"))}</div>`;
     } else if (node.loaded && node.children && node.children.length) {
-      node.children.forEach((child) => childWrap.append(renderNode(child, depth + 1, false)));
+      node.children
+        .filter((child) => nodeVisible(child))
+        .forEach((child) => childWrap.append(renderNode(child, depth + 1, false)));
     } else if (node.loaded) {
       childWrap.innerHTML = `<div class="tree-hint">${escapeHtml(t("treeFolderEmpty"))}</div>`;
     }
@@ -1010,12 +1065,132 @@ async function toggleCheck(node, desired) {
   }
 }
 
-// Single-click a tree row → mark it active and preview it on the canvas.
-function selectAndPreview(node) {
+// Mark a node active (and, for files, preview it on the canvas). Used by both
+// single-click and keyboard navigation; keeps the active row scrolled into view.
+function setActiveNode(node, { preview = false, focus = true } = {}) {
   state.activePath = node.path;
-  state.preview = node.path;
+  const showPreview = preview && !node.isDir;
+  if (showPreview) state.preview = node.path;
   renderTree();
-  renderCanvas();
+  if (showPreview) renderCanvas();
+  if (focus) els.inputList.focus({ preventScroll: true });
+  scrollActiveIntoView();
+}
+
+function scrollActiveIntoView() {
+  const row = els.inputList.querySelector(".tree-row.is-active");
+  if (row) row.scrollIntoView({ block: "nearest" });
+}
+
+// Single-click a file row → select it and preview on the canvas.
+function selectAndPreview(node) {
+  setActiveNode(node, { preview: true });
+}
+
+// Keyboard navigation over the currently visible rows (↑/↓ move + preview,
+// →/← expand/collapse or step in/out, Space toggles the checkbox).
+function handleTreeKey(event) {
+  const nodes = state.visibleNodes;
+  if (!nodes.length) return;
+  const index = nodes.findIndex((node) => node.path === state.activePath);
+  const current = index >= 0 ? nodes[index] : null;
+
+  switch (event.key) {
+    case "ArrowDown": {
+      event.preventDefault();
+      const next = nodes[Math.min(nodes.length - 1, index + 1)] || nodes[0];
+      setActiveNode(next, { preview: true });
+      break;
+    }
+    case "ArrowUp": {
+      event.preventDefault();
+      const prev = index <= 0 ? nodes[0] : nodes[index - 1];
+      setActiveNode(prev, { preview: true });
+      break;
+    }
+    case "ArrowRight": {
+      if (!current || !current.isDir) break;
+      event.preventDefault();
+      if (!current.expanded) {
+        toggleNode(current);
+      } else if (current.children && current.children.length) {
+        const child = current.children.find((c) => nodeVisible(c));
+        if (child) setActiveNode(child, { preview: true });
+      }
+      break;
+    }
+    case "ArrowLeft": {
+      if (!current) break;
+      event.preventDefault();
+      if (current.isDir && current.expanded) {
+        toggleNode(current);
+      } else {
+        const parent = findParent(current.path);
+        if (parent) setActiveNode(parent, { preview: false });
+      }
+      break;
+    }
+    case " ":
+    case "Spacebar": {
+      if (!current) break;
+      event.preventDefault();
+      const desired = current.isDir ? folderCheckState(current) !== "all" : !isChecked(current.path);
+      toggleCheck(current, desired);
+      break;
+    }
+    case "Enter": {
+      if (!current) break;
+      event.preventDefault();
+      if (current.isDir) toggleNode(current);
+      else setActiveNode(current, { preview: true });
+      break;
+    }
+    default:
+      break;
+  }
+}
+
+// ── Right-click context menu: reveal in Explorer + (roots) remove ──
+function closeTreeContextMenu() {
+  if (state.contextMenu) {
+    state.contextMenu.remove();
+    state.contextMenu = null;
+  }
+}
+
+function showTreeContextMenu(node, x, y, isRoot) {
+  closeTreeContextMenu();
+  const menu = document.createElement("div");
+  menu.className = "context-menu";
+  const items = [{ label: t("revealInExplorer"), action: () => revealInExplorer(node.path) }];
+  if (isRoot) items.push({ label: t("remove"), action: () => removeRoot(node.path) });
+  items.forEach(({ label, action }) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "context-menu-item";
+    button.textContent = label;
+    button.addEventListener("click", () => {
+      closeTreeContextMenu();
+      action();
+    });
+    menu.append(button);
+  });
+  menu.style.left = `${x}px`;
+  menu.style.top = `${y}px`;
+  document.body.append(menu);
+  state.contextMenu = menu;
+  // Nudge back on-screen if it would overflow the viewport edges.
+  const rect = menu.getBoundingClientRect();
+  if (rect.right > window.innerWidth) menu.style.left = `${window.innerWidth - rect.width - 6}px`;
+  if (rect.bottom > window.innerHeight) menu.style.top = `${window.innerHeight - rect.height - 6}px`;
+}
+
+async function revealInExplorer(path) {
+  try {
+    await invoke("revealInExplorer", { path });
+  } catch (err) {
+    addLog("error", err.message);
+  }
 }
 
 function addRoots(paths, isDir) {
@@ -1881,12 +2056,35 @@ async function bootstrap() {
     if (action === "remove") {
       removeRoot(node.path);
     } else if (action === "toggle" || node.isDir) {
+      setActiveNode(node, { preview: false });
       toggleNode(node);
     } else {
       // File row: single-click selects and previews on the canvas.
       selectAndPreview(node);
     }
   });
+  els.inputList.addEventListener("keydown", handleTreeKey);
+  els.inputList.addEventListener("contextmenu", (event) => {
+    const row = event.target.closest(".tree-row");
+    if (!row) return;
+    event.preventDefault();
+    const node = findNode(row.dataset.path);
+    if (!node) return;
+    const isRoot = state.tree.some((rootNode) => rootNode.path === node.path);
+    setActiveNode(node, { preview: false });
+    showTreeContextMenu(node, event.clientX, event.clientY, isRoot);
+  });
+  els.treeSearch.addEventListener("input", () => {
+    state.filter = els.treeSearch.value.trim().toLowerCase();
+    renderTree();
+  });
+  // Dismiss the context menu on any outside interaction.
+  document.addEventListener("click", () => closeTreeContextMenu());
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") closeTreeContextMenu();
+  });
+  window.addEventListener("blur", () => closeTreeContextMenu());
+  els.inputList.addEventListener("scroll", () => closeTreeContextMenu());
   els.results.addEventListener("click", (event) => {
     const previewIndex = event.target?.dataset?.previewIndex;
     if (previewIndex !== undefined) {

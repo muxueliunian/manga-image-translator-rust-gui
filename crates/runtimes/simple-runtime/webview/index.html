@@ -62,7 +62,10 @@
           <h2 id="inputTitle" data-i18n="inputTitle">输入队列</h2>
           <p id="inputStats" class="zone-meta" data-i18n="inputStatsEmpty">0 项 · 0 文件 · 0 文件夹</p>
         </div>
-        <div class="path-list" id="inputList" aria-live="polite"></div>
+        <div class="tree-search">
+          <input id="treeSearch" type="search" autocomplete="off" spellcheck="false" data-i18n-placeholder="treeSearchPlaceholder" placeholder="过滤文件名…">
+        </div>
+        <div class="path-list" id="inputList" tabindex="0" aria-live="polite"></div>
       </aside>
 
       <!-- ── CANVAS ── -->

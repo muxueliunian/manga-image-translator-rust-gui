@@ -72,6 +72,7 @@ enum IpcKind {
     ExportResults,
     ListDir,
     ReadImage,
+    RevealInExplorer,
 }
 
 #[derive(Debug, Serialize)]
@@ -171,6 +172,11 @@ struct ListDirPayload {
 
 #[derive(Deserialize)]
 struct ReadImagePayload {
+    path: PathBuf,
+}
+
+#[derive(Deserialize)]
+struct RevealInExplorerPayload {
     path: PathBuf,
 }
 
@@ -447,6 +453,15 @@ fn handle_ipc_request(request: &IpcRequest) -> Result<serde_json::Value> {
             let payload = serde_json::from_value::<ReadImagePayload>(request.payload.clone())
                 .map_err(|err| anyhow!("Invalid readImage payload: {err}"))?;
             read_image_data_url(&payload.path).and_then(to_value)
+        }
+        IpcKind::RevealInExplorer => {
+            let payload =
+                serde_json::from_value::<RevealInExplorerPayload>(request.payload.clone())
+                    .map_err(|err| anyhow!("Invalid revealInExplorer payload: {err}"))?;
+            reveal_in_explorer(&payload.path)?;
+            to_value(serde_json::json!({
+                "path": payload.path.display().to_string(),
+            }))
         }
         IpcKind::StartTranslation => unreachable!("handled asynchronously"),
     }
@@ -1058,6 +1073,44 @@ fn open_path(path: &Path) -> Result<()> {
     #[cfg(all(unix, not(target_os = "macos")))]
     {
         Command::new("xdg-open").arg(path).spawn()?;
+        return Ok(());
+    }
+}
+
+/// Reveal a file/folder in the OS file manager, selecting it where supported.
+fn reveal_in_explorer(path: &Path) -> Result<()> {
+    if !path.exists() {
+        return Err(anyhow!("Path does not exist: {}", path.display()));
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        // `explorer /select,<path>` opens the parent and highlights the entry.
+        // explorer.exe needs the *path* quoted (not the whole `/select,...` token),
+        // so build the command line verbatim with `raw_arg` — letting std quote the
+        // argument wraps `/select,...` itself and explorer silently opens Documents.
+        use std::os::windows::process::CommandExt;
+        Command::new("explorer.exe")
+            .raw_arg(format!("/select,\"{}\"", path.display()))
+            .spawn()?;
+        return Ok(());
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        Command::new("open").arg("-R").arg(path).spawn()?;
+        return Ok(());
+    }
+
+    #[cfg(all(unix, not(target_os = "macos")))]
+    {
+        // No portable "select" on Linux; open the containing directory.
+        let target = if path.is_dir() {
+            path
+        } else {
+            path.parent().unwrap_or(path)
+        };
+        Command::new("xdg-open").arg(target).spawn()?;
         return Ok(());
     }
 }
