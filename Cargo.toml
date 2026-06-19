@@ -22,6 +22,7 @@ members = [
 [workspace.package]
 version = "0.12.2"
 edition = "2021"
+license = "GPL-3.0-only"
 
 [workspace.dependencies]
 rayon = "1.11"

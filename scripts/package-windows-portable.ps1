@@ -444,6 +444,10 @@ Packaging notes:
 "@
 Set-Content -LiteralPath (Join-Path $PortableDir "README-portable.txt") -Value $readme -Encoding ASCII
 
+Write-Step "Copying license and notice"
+[void](Copy-IfExists -Path (Join-Path $RepoRoot "LICENSE") -Destination $PortableDir)
+[void](Copy-IfExists -Path (Join-Path $RepoRoot "NOTICE") -Destination $PortableDir)
+
 if (-not $NoZip) {
     Write-Step "Creating zip archive"
     $zipPath = Join-Path $DistDir "$PortableName.zip"

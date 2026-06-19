@@ -1,0 +1,37 @@
+# NOTICE / 来源与第三方声明
+
+本项目以 **GNU General Public License v3.0** 发布，完整条款见同目录 `LICENSE`。
+This project is distributed under the **GNU General Public License v3.0**; see `LICENSE`.
+
+## 来源 / Provenance
+
+本仓库是一个 fork，新增了便携 Windows WebView2 GUI（`crates/runtimes/simple-runtime`）。
+This repository is a fork that adds a portable Windows WebView2 GUI.
+
+- 原始项目 / Original project: **zyddnys/manga-image-translator**（GPL-3.0）
+  https://github.com/zyddnys/manga-image-translator
+- Rust 端口 / Rust port（本 fork 的上游）: **frederik-uni/manga-image-translator-rust**
+  https://github.com/frederik-uni/manga-image-translator-rust
+
+整条衍生链的根（zyddnys/manga-image-translator）采用 GPL-3.0，故本 fork 亦以 GPL-3.0 发布。
+The root of this derivative chain is GPL-3.0, so this fork is likewise GPL-3.0.
+
+## 模型权重 / Model weights
+
+便携包**不包含**任何模型权重。模型在首次使用时下载到用户自选的目录；
+每个模型归其各自作者所有，受其自身许可证/条款约束。
+Model weights are **not bundled**. They are downloaded on first use into a
+user-chosen directory; each model is the property of its respective authors and
+subject to its own license/terms.
+
+## 便携包内随附的第三方运行时组件 / Bundled third-party runtime components
+
+以下组件随便携包分发，各自遵循其许可证 / each under its own license:
+
+- OpenCV (`opencv_world*.dll`) — Apache-2.0
+- ONNX Runtime (`onnxruntime*.dll`, `DirectML.dll`) — MIT
+- Microsoft Edge WebView2 Runtime loader — Microsoft 分发条款
+- 仅 CUDA 版 / CUDA build only: NVIDIA CUDA / cuDNN 运行时 DLL
+  （`cudart64_*`, `cublas*`, `cufft64_*`, `cudnn*`）—— NVIDIA 专有 EULA，
+  其再分发需遵循 NVIDIA 的可再分发组件条款 / redistribution subject to
+  NVIDIA's redistributable terms.
