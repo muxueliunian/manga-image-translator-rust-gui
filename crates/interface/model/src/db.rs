@@ -167,6 +167,24 @@ fn get_all_files_recursively<P: AsRef<Path>>(dir: P) -> Vec<std::path::PathBuf> 
     files
 }
 
+/// Whether `path` holds real downloaded bytes: a non-empty file, or a directory
+/// containing at least one non-empty, non-hidden file. Used to reject empty or
+/// truncated-to-zero downloads for models that ship without a real hash ("###").
+fn has_nonempty_content(path: &Path) -> bool {
+    match fs::metadata(path) {
+        Ok(meta) if meta.is_file() => meta.len() > 0,
+        Ok(meta) if meta.is_dir() => get_all_files_recursively(path).iter().any(|p| {
+            let visible = p
+                .file_name()
+                .and_then(|n| n.to_str())
+                .map(|n| !n.starts_with('.'))
+                .unwrap_or(false);
+            visible && fs::metadata(p).map(|m| m.len() > 0).unwrap_or(false)
+        }),
+        _ => false,
+    }
+}
+
 fn failure<P: AsRef<Path>>(base_path: Option<P>, file_path: P, expected_hash: &str) -> bool {
     if !file_path.as_ref().exists() {
         return true;
@@ -182,7 +200,10 @@ fn failure<P: AsRef<Path>>(base_path: Option<P>, file_path: P, expected_hash: &s
         }
     }
     if expected_hash == "###" {
-        return false;
+        // No real hash to verify against; at least make sure the path actually
+        // holds bytes, so an empty / truncated-to-zero download isn't treated as
+        // ready (it gets re-fetched instead of silently used).
+        return !has_nonempty_content(file_path.as_ref());
     }
 
     if let Some(base_path) = &base_path {
@@ -342,6 +363,18 @@ fn download_and_extract(
         .and_then(|val| val.to_str().ok())
         .and_then(|v| v.parse::<u64>().ok())
         .unwrap_or(0);
+    // Content-Length describes the *encoded* body; if the server applied a
+    // transfer compression the bytes we read won't match it, so only treat the
+    // length as an integrity target for identity (uncompressed) responses.
+    let content_encoded = response
+        .headers()
+        .get("Content-Encoding")
+        .and_then(|val| val.to_str().ok())
+        .map(|v| {
+            let v = v.trim();
+            !v.is_empty() && !v.eq_ignore_ascii_case("identity")
+        })
+        .unwrap_or(false);
 
     let pb = if total_size > 0 {
         let pb = ProgressBar::new(total_size);
@@ -357,11 +390,11 @@ fn download_and_extract(
     };
 
     let mut temp_file = tempfile::tempfile()?;
+    let mut downloaded = 0u64;
     {
         let body = response.body_mut();
         let mut reader = body.as_reader();
         let mut buf = [0u8; 65536];
-        let mut downloaded = 0u64;
         loop {
             let n = reader.read(&mut buf)?;
             if n == 0 {
@@ -381,6 +414,16 @@ fn download_and_extract(
     if let Some(pb) = pb {
         pb.finish_with_message("Download complete");
     }
+
+    // Catch interrupted downloads: an identity response that delivered fewer
+    // bytes than Content-Length is truncated, so fail instead of saving / using
+    // the partial file (the caller's retry loop will re-fetch).
+    if total_size > 0 && !content_encoded && downloaded < total_size {
+        return Err(anyhow!(
+            "下载不完整：仅收到 {downloaded}/{total_size} 字节，可能网络中断（{url}）"
+        ));
+    }
+
     let url = url.split_once("?").map(|v| v.0).unwrap_or(url);
     if url.ends_with(".tar.gz") {
         debug!("Extracting archive...");
@@ -502,6 +545,42 @@ mod tests {
             "https://example.com/404.tar.gz",
             "invalidhash",
         );
+    }
+
+    #[test]
+    fn test_placeholder_hash_rejects_empty_file() {
+        // A "###" model has no real hash; an empty / truncated-to-zero file must
+        // still be reported as not-ready so it gets re-downloaded.
+        let dir = tempdir().expect("couldnt create tempdir");
+        let path = dir.path().join("model.onnx");
+        fs::write(&path, b"").expect("couldnt write empty file");
+        assert!(failure(Some(dir.path()), path.as_path(), "###"));
+    }
+
+    #[test]
+    fn test_placeholder_hash_accepts_nonempty_file() {
+        let dir = tempdir().expect("couldnt create tempdir");
+        let path = dir.path().join("model.onnx");
+        fs::write(&path, b"real weights").expect("couldnt write file");
+        assert!(!failure(Some(dir.path()), path.as_path(), "###"));
+    }
+
+    #[test]
+    fn test_placeholder_hash_rejects_dir_of_empty_files() {
+        let dir = tempdir().expect("couldnt create tempdir");
+        let model_dir = dir.path().join("bundle");
+        fs::create_dir_all(&model_dir).expect("couldnt create model dir");
+        fs::write(model_dir.join("a.bin"), b"").expect("couldnt write file");
+        assert!(failure(Some(dir.path()), model_dir.as_path(), "###"));
+    }
+
+    #[test]
+    fn test_placeholder_hash_accepts_dir_with_nonempty_file() {
+        let dir = tempdir().expect("couldnt create tempdir");
+        let model_dir = dir.path().join("bundle");
+        fs::create_dir_all(&model_dir).expect("couldnt create model dir");
+        fs::write(model_dir.join("a.bin"), b"data").expect("couldnt write file");
+        assert!(!failure(Some(dir.path()), model_dir.as_path(), "###"));
     }
 
     #[test]
