@@ -51,6 +51,10 @@ impl ModelLoad for LamaLargeInpainter {
 impl Model for LamaLargeInpainter {
     impl_model_helpers!("inpainter", "lama_mpe", model);
 
+    fn files(&self) -> Vec<(&'static str, String)> {
+        vec![("model", "model.onnx".into())]
+    }
+
     fn models(&self) -> std::collections::HashMap<&'static str, interface_model::ModelSource> {
         hashmap! {"model" => ModelSource{ url: "https://github.com/frederik-uni/manga-image-translator-rust/releases/download/lama_mpe/model.onnx", hash: "###" }}
     }

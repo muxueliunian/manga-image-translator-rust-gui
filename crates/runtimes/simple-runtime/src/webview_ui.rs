@@ -5,7 +5,7 @@ use std::{
     process::Command,
     sync::Arc,
     thread,
-    time::Instant,
+    time::{Duration, Instant},
 };
 
 use anyhow::{anyhow, Result};
@@ -29,7 +29,7 @@ use crate::{
     },
     prepare_renderer_assets, render_export_bytes_with_settings,
     settings::{Renderer, Settings},
-    setup::Models,
+    setup::{self, Models},
     update::check_cuda_error,
 };
 
@@ -77,6 +77,8 @@ enum IpcKind {
     GetModelsConfig,
     SetModelsDir,
     SetAutoDownload,
+    GetModelsStatus,
+    DownloadModels,
 }
 
 #[derive(Debug, Serialize)]
@@ -199,6 +201,14 @@ struct SetAutoDownloadPayload {
     value: bool,
 }
 
+/// Which model groups to download. Empty = every group with missing files.
+/// Group ids come from [`setup::model_catalog`]'s `id` field.
+#[derive(Deserialize, Default)]
+struct DownloadModelsPayload {
+    #[serde(default)]
+    targets: Vec<String>,
+}
+
 #[derive(Serialize)]
 struct DirEntryInfo {
     name: String,
@@ -268,6 +278,27 @@ pub fn run() -> Result<()> {
             let _ = ipc_proxy.send_event(UserEvent::Ipc(request.body().to_string()));
         })
         .build(&window)?;
+
+    // Startup auto-download (opt-in): front-load the *currently selected* pipeline
+    // models so the first translation doesn't stall on a download. Scoped to
+    // detector/OCR/inpainter only — the upscaler is opt-in and variant-heavy, so it
+    // stays lazy. Events queue until the event loop below drains them.
+    let startup_models_config = load_models_config();
+    if startup_models_config.auto_download
+        && startup_models_config
+            .model_dir
+            .as_deref()
+            .map(|dir| !dir.trim().is_empty())
+            .unwrap_or(false)
+    {
+        let auto_proxy = proxy.clone();
+        thread::spawn(move || {
+            let settings = load_saved_settings().unwrap_or_default();
+            send_log(&auto_proxy, "info", "启动自动下载：检查当前流水线所需模型…");
+            let jobs = setup::selected_core_download_jobs(&settings);
+            run_download_jobs(jobs, &auto_proxy);
+        });
+    }
 
     event_loop.run(move |event, _target, control_flow| {
         *control_flow = ControlFlow::Wait;
@@ -391,6 +422,11 @@ fn handle_ipc_message(
         return;
     }
 
+    if matches!(request.kind, IpcKind::DownloadModels) {
+        handle_download_models(request, proxy.clone());
+        return;
+    }
+
     let response = match handle_ipc_request(&request) {
         Ok(value) => IpcResponse {
             id: request.id,
@@ -502,7 +538,196 @@ fn handle_ipc_request(request: &IpcRequest) -> Result<serde_json::Value> {
             save_models_config(&config)?;
             to_value(config)
         }
-        IpcKind::StartTranslation => unreachable!("handled asynchronously"),
+        IpcKind::GetModelsStatus => Ok(build_models_status()),
+        IpcKind::StartTranslation | IpcKind::DownloadModels => {
+            unreachable!("handled asynchronously")
+        }
+    }
+}
+
+/// Snapshot for the model-management table: configured dir + per-model
+/// downloaded/missing status. Readiness is checked without downloading.
+fn build_models_status() -> serde_json::Value {
+    let dir = load_models_config().model_dir.unwrap_or_default();
+    let set = !dir.trim().is_empty();
+    serde_json::json!({
+        "modelDir": dir,
+        "modelDirSet": set,
+        "groups": setup::model_catalog(),
+    })
+}
+
+/// Download the requested model groups (or all missing) on a worker thread,
+/// streaming per-file `progress`/`log` events, then resolve with a fresh status
+/// snapshot. Mirrors [`handle_start_translation`]'s threading.
+fn handle_download_models(request: IpcRequest, proxy: tao::event_loop::EventLoopProxy<UserEvent>) {
+    thread::spawn(move || {
+        let result = (|| -> Result<serde_json::Value> {
+            let payload = serde_json::from_value::<DownloadModelsPayload>(request.payload.clone())
+                .unwrap_or_default();
+            let configured = load_models_config()
+                .model_dir
+                .as_deref()
+                .map(|dir| !dir.trim().is_empty())
+                .unwrap_or(false);
+            if !configured {
+                return Err(anyhow!(
+                    "模型目录未设置：请先在「模型」页选择一个外部文件夹。"
+                ));
+            }
+            let jobs = setup::download_jobs(&payload.targets);
+            run_download_jobs(jobs, &proxy);
+            Ok(build_models_status())
+        })();
+
+        let response = match result {
+            Ok(value) => IpcResponse {
+                id: request.id,
+                ok: true,
+                data: Some(value),
+                error: None,
+            },
+            Err(err) => IpcResponse::<serde_json::Value> {
+                id: request.id,
+                ok: false,
+                data: None,
+                error: Some(err.to_string()),
+            },
+        };
+        let _ = proxy.send_event(UserEvent::IpcResponse(response));
+    });
+}
+
+/// Download each job in turn, emitting progress/log events. Returns
+/// `(succeeded, failed)`. Per-file failures are logged and skipped so one bad
+/// download doesn't abort the rest.
+fn run_download_jobs(
+    jobs: Vec<setup::DownloadJob>,
+    proxy: &tao::event_loop::EventLoopProxy<UserEvent>,
+) -> (usize, usize) {
+    let total = jobs.len();
+    if total == 0 {
+        send_log(proxy, "info", "没有需要下载的模型（均已就绪）。");
+        return (0, 0);
+    }
+    let mut ok = 0;
+    let mut failed = 0;
+    for (index, job) in jobs.iter().enumerate() {
+        let file_no = index + 1;
+        let label = job.label;
+        let file = job.file.as_str();
+        let started = Instant::now();
+        let mut last_emit: Option<Instant> = None;
+        // Throttled byte-level progress: speed/ETA/percent for the current file.
+        // `current`/`total`/`percent` carry the file count + byte % (the frontend
+        // appends them as ` · n/total · p%`), so the message text omits them.
+        let mut on_progress = |downloaded: u64, size: u64| {
+            let now = Instant::now();
+            let done = size > 0 && downloaded >= size;
+            if !done {
+                if let Some(prev) = last_emit {
+                    if now.duration_since(prev) < Duration::from_millis(150) {
+                        return;
+                    }
+                }
+            }
+            last_emit = Some(now);
+            let elapsed = started.elapsed().as_secs_f64().max(0.001);
+            let speed = downloaded as f64 / elapsed;
+            let percent = if size > 0 {
+                ((downloaded as f64 / size as f64) * 100.0)
+                    .round()
+                    .min(100.0) as u8
+            } else {
+                0
+            };
+            let message = if size > 0 {
+                let eta = if speed > 1.0 {
+                    (size.saturating_sub(downloaded) as f64 / speed) as u64
+                } else {
+                    0
+                };
+                format!(
+                    "下载 {label} / {file} · {} / {} · {}/s · 剩 {}",
+                    fmt_bytes(downloaded),
+                    fmt_bytes(size),
+                    fmt_bytes(speed as u64),
+                    fmt_eta(eta),
+                )
+            } else {
+                format!(
+                    "下载 {label} / {file} · {} · {}/s",
+                    fmt_bytes(downloaded),
+                    fmt_bytes(speed as u64),
+                )
+            };
+            let _ = proxy.send_event(UserEvent::Progress(ProgressEvent {
+                current: file_no,
+                total,
+                percent,
+                message,
+            }));
+        };
+        match interface_model::download_model_file(
+            job.kind,
+            job.name,
+            &job.file,
+            job.url,
+            job.hash,
+            &mut on_progress,
+        ) {
+            Ok(path) => {
+                ok += 1;
+                send_log(
+                    proxy,
+                    "success",
+                    format!("已下载 {} / {} → {}", job.label, job.file, path.display()),
+                );
+            }
+            Err(err) => {
+                failed += 1;
+                send_log(
+                    proxy,
+                    "error",
+                    format!("下载失败 {} / {}: {err}", job.label, job.file),
+                );
+            }
+        }
+    }
+    send_progress(
+        proxy,
+        total,
+        total,
+        format!("模型下载完成（成功 {ok}，失败 {failed}）"),
+    );
+    (ok, failed)
+}
+
+/// Human-readable byte size (B/KB/MB/GB) for download progress strings.
+fn fmt_bytes(bytes: u64) -> String {
+    const KB: f64 = 1024.0;
+    const MB: f64 = KB * 1024.0;
+    const GB: f64 = MB * 1024.0;
+    let b = bytes as f64;
+    if b >= GB {
+        format!("{:.1} GB", b / GB)
+    } else if b >= MB {
+        format!("{:.1} MB", b / MB)
+    } else if b >= KB {
+        format!("{:.0} KB", b / KB)
+    } else {
+        format!("{bytes} B")
+    }
+}
+
+/// Compact ETA string (`—` when unknown).
+fn fmt_eta(secs: u64) -> String {
+    if secs == 0 {
+        "—".to_string()
+    } else if secs >= 60 {
+        format!("{}分{}秒", secs / 60, secs % 60)
+    } else {
+        format!("{secs}秒")
     }
 }
 

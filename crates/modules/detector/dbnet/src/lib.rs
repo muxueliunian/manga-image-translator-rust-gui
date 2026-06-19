@@ -53,6 +53,10 @@ impl ModelLoad for DbNetDetector {
 impl Model for DbNetDetector {
     impl_model_helpers!("detector", "dbnet", model);
 
+    fn files(&self) -> Vec<(&'static str, String)> {
+        vec![("model", "model.onnx".into())]
+    }
+
     fn models(&self) -> std::collections::HashMap<&'static str, ModelSource> {
         hashmap! {
             "model"=> ModelSource {

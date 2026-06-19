@@ -1,11 +1,15 @@
 mod detector;
 mod inpainter;
+mod models_catalog;
 mod ocr;
 mod translator;
 mod upscaler;
 pub use detector::DetectorType;
 pub use detector::Detectors;
 use interface_translator::LangIdDetector;
+pub use models_catalog::{
+    download_jobs, model_catalog, selected_core_download_jobs, DownloadJob, ModelGroupStatus,
+};
 pub use upscaler::UpscalerType;
 pub use upscaler::Upscalers;
 

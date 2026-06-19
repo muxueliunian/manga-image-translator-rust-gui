@@ -69,6 +69,13 @@ impl ModelLoad for Anime4KUpscaler {
 impl Model for Anime4KUpscaler {
     impl_model_helpers!("upscaler", "waifu2x", model);
 
+    fn files(&self) -> Vec<(&'static str, String)> {
+        self.models()
+            .into_iter()
+            .map(|(k, _)| (k, format!("{k}.onnx")))
+            .collect()
+    }
+
     fn models(&self) -> std::collections::HashMap<&'static str, interface_model::ModelSource> {
         hashmap! {
             "2x_S" => interface_model::ModelSource { url: "https://github.com/frederik-uni/manga-image-translator-rust/releases/download/anime4k/2x_S", hash: "###" },
