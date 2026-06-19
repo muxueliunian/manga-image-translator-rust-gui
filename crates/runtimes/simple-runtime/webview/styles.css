@@ -1110,6 +1110,37 @@ svg {
   flex: 1 1 auto;
 }
 
+/* Output-directory picker in the toolbar Run group. */
+.output-dir-button #outputDirLabel {
+  max-width: 150px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.output-dir-button.is-set {
+  border-color: var(--accent);
+  color: var(--accent-strong);
+}
+
+/* Read-only output-dir path shown in the inspector Output group. */
+.output-dir-readout {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-2);
+  margin: 0 0 8px;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.output-dir-readout #outputDirReadout {
+  min-width: 0;
+  overflow: hidden;
+  font-family: var(--font-mono);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .toolbar-meta {
   gap: var(--space-2);
 }
@@ -1241,6 +1272,9 @@ svg {
   min-height: 0;
   overflow: auto;
   padding: var(--space-3);
+  /* Own compositor layer: stops WebView2 leaving stale paint tiles (ghosting)
+     when accordion groups expand/collapse and the content below reflows. */
+  transform: translateZ(0);
 }
 
 .inspector-scroll .config-tab-panels {
@@ -1463,6 +1497,8 @@ svg {
 
 .acc-body {
   padding: 10px;
+  /* Clips content while the height is animated open/closed (see initAccordions). */
+  overflow: hidden;
 }
 
 /* ── Theme toggle (sun in dark = switch to light, moon in light = switch to dark) ── */
@@ -1684,6 +1720,9 @@ svg {
 .filmstrip .result-list {
   flex: 1;
   min-height: 0;
+  /* Reset the base 220px cap so the list fills the (resizable) section height
+     instead of leaving empty space below when the section is dragged taller. */
+  max-height: none;
   overflow: auto;
   margin: 0;
   padding: 6px 8px 10px;
@@ -1776,6 +1815,7 @@ svg {
   justify-content: center;
   padding: var(--space-4);
   background: rgba(0, 0, 0, 0.45);
+  animation: mitFadeIn 140ms ease;
 }
 
 .modal-panel {
@@ -1789,6 +1829,29 @@ svg {
   border-radius: var(--radius);
   background: var(--surface);
   box-shadow: 0 16px 48px rgba(0, 0, 0, 0.4);
+  animation: mitPopIn 170ms cubic-bezier(0.2, 0.7, 0.3, 1);
+}
+
+@keyframes mitFadeIn {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes mitPopIn {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.985);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .modal-overlay,
+  .modal-panel,
+  .acc-chev {
+    animation: none;
+    transition: none;
+  }
 }
 
 /* Header stays pinned; only the body scrolls (close button always reachable). */
