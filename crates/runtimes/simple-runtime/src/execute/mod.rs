@@ -74,7 +74,7 @@ impl Models {
 
         emit_stage(&mut on_stage, "图片预处理");
         let timer = StageTimer::start("preprocess", logger);
-        let ip = Arc::new(CpuImageProcessor::default()) as ImageProcessor;
+        let ip = Arc::new(CpuImageProcessor) as ImageProcessor;
         let (img, alpha) = RawImage::rgba(img);
         report.record_timer(timer);
 

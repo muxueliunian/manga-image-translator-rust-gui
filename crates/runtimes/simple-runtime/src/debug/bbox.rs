@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::path::Path;
 
 use interface_detector::textlines::Quadrilateral;
 use interface_image::RawImage;
@@ -7,7 +7,7 @@ use opencv::{
     imgproc::{polylines, LINE_8},
 };
 
-pub fn render_bboxes(img: &RawImage, qu: &[Quadrilateral], path: &PathBuf) -> anyhow::Result<()> {
+pub fn render_bboxes(img: &RawImage, qu: &[Quadrilateral], path: &Path) -> anyhow::Result<()> {
     let mut img = img.as_opencv_mat()?.clone_pointee();
     for q in qu {
         let pts = q

@@ -164,14 +164,10 @@ impl Target {
                 if hash_map.get(&None).is_none() {
                     return Some("no default");
                 };
-                for mut key in hash_map.keys().cloned() {
+                if let Some(mut key) = hash_map.keys().cloned().next() {
                     let mut keys_used = HashSet::new();
                     loop {
-                        let value = hash_map.get(&key);
-                        let value = match value {
-                            Some(v) => v,
-                            None => return None,
-                        };
+                        let value = hash_map.get(&key)?;
                         let v = keys_used.insert(key);
                         if !v {
                             return Some("loop detected");

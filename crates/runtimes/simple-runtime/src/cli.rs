@@ -18,7 +18,7 @@ pub struct Cli {
     #[arg(long, global = true, default_value_t = 2)]
     pub max_batch_size_upscaler: usize,
 
-    /// Choose a subcommand (cli, api, ui, or ui-webview)
+    /// Choose a subcommand (cli or ui-webview)
     #[command(subcommand)]
     pub command: Commands,
 }
@@ -42,20 +42,6 @@ pub enum Commands {
         #[arg(long)]
         overwrite: bool,
     },
-
-    /// Run in API server mode
-    Api {
-        /// Host to bind the API server
-        #[arg(long, default_value = "127.0.0.1")]
-        host: String,
-
-        /// Port to bind the API server
-        #[arg(long, default_value_t = 8080)]
-        port: u16,
-    },
-
-    /// Run the UI
-    Ui,
 
     /// Run the WebView UI shell
     #[command(name = "ui-webview")]

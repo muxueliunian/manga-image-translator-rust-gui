@@ -1,8 +1,15 @@
+#![allow(
+    clippy::manual_div_ceil,
+    clippy::needless_return,
+    clippy::new_without_default,
+    clippy::too_many_arguments,
+    clippy::vec_init_then_push
+)]
+
 use std::{
     fs::{create_dir_all, File},
     io::Write,
     path::{Path, PathBuf},
-    sync::Arc,
     time::Instant,
 };
 
@@ -13,7 +20,6 @@ use html::HtmlRenderer;
 use image::{ExtendedColorType, ImageEncoder};
 use log::{error, info, warn};
 use png::{PngRenderConfig, PngRenderer, TextDirectionMode};
-use tokio::sync::Mutex;
 use tracing_subscriber::EnvFilter;
 use walkdir::WalkDir;
 
@@ -24,8 +30,6 @@ use crate::{
     update::{check_crate_version, check_cuda_error},
 };
 
-mod api;
-mod cache;
 pub mod cli;
 mod debug;
 mod diagnostics;
@@ -34,7 +38,6 @@ mod execute;
 mod perf;
 pub mod settings;
 pub mod setup;
-mod ui;
 mod update;
 mod webview_ui;
 
@@ -153,7 +156,7 @@ async fn main() {
 
     let _ = check_crate_version("frederik-uni/manga-image-translator-rust").await;
 
-    let mut models = Models::new(
+    let models = Models::new(
         cli.max_batch_size_upscaler,
         cli.max_batch_size_ocr,
         true,
@@ -238,7 +241,7 @@ async fn main() {
                 };
                 let debug_path = if cli.verbose > 2 {
                     let id = uuid::Uuid::new_v4();
-                    let p = PathBuf::from(format!("debug/{}", id.to_string()));
+                    let p = PathBuf::from(format!("debug/{id}"));
                     create_dir_all(&p).expect("Failed to create debug directory");
                     Some(p)
                 } else {
@@ -281,37 +284,6 @@ async fn main() {
                     ),
                 );
             }
-        }
-        cli::Commands::Api { host, port } => api::main(&host, port, Arc::new(Mutex::new(models)))
-            .await
-            .unwrap(),
-        cli::Commands::Ui => {
-            let native_options = eframe::NativeOptions {
-                viewport: egui::ViewportBuilder::default()
-                    .with_inner_size([1100.0, 760.0])
-                    .with_min_inner_size([900.0, 620.0]),
-                // .with_icon(
-                //     // NOTE: Adding an icon is optional
-                //     eframe::icon_data::from_png_bytes(
-                //         &include_bytes!("../assets/icon-256.png")[..],
-                //     )
-                //     .expect("Failed to load icon"),
-                // ),
-                ..Default::default()
-            };
-            eframe::run_native(
-                "Manga Image Translator",
-                native_options,
-                Box::new(|cc| {
-                    Ok(Box::new(ui::MitApp::new(
-                        cc,
-                        Arc::new(Mutex::new(models)),
-                        tokio::runtime::Handle::current(),
-                    )))
-                }),
-            )
-            .expect("Failed to run egui");
-            return;
         }
         cli::Commands::UiWebview => unreachable!("ui-webview exits before model initialization"),
     }

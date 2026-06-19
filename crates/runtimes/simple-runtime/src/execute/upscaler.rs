@@ -19,7 +19,7 @@ impl Models {
 
             rgb_img = self
                 .get_upscaler(upscaler)
-                .upscale(&rgb_img, config.patch_size, config.padding, &ip)
+                .upscale(&rgb_img, config.patch_size, config.padding, ip)
                 .await?;
             let (ha, wa) = (rgb_img.height, rgb_img.width);
             if let Some(a) = alpha {

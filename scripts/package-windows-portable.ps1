@@ -410,19 +410,6 @@ Write-Launcher -Path (Join-Path $PortableDir "run-ui-debug.bat") -Lines @(
     "pause"
 )
 
-Write-Launcher -Path (Join-Path $PortableDir "run-egui.bat") -Lines @(
-    """%CD%\$BinaryName"" ui %*",
-    "pause"
-)
-
-Write-Launcher -Path (Join-Path $PortableDir "run-webui.bat") -Lines @(
-    "set ""MIT_HOST=127.0.0.1""",
-    "set ""MIT_PORT=8080""",
-    "if not ""%~1""=="""" set ""MIT_PORT=%~1""",
-    "start ""manga-image-translator-rust webui"" http://%MIT_HOST%:%MIT_PORT%/",
-    """%CD%\$BinaryName"" api --host %MIT_HOST% --port %MIT_PORT%"
-)
-
 Write-Launcher -Path (Join-Path $PortableDir "run-cli-example.bat") -Lines @(
     "if not exist ""uploads"" mkdir ""uploads""",
     "if not exist ""results"" mkdir ""results""",
@@ -444,9 +431,6 @@ Contents:
 
 Launchers:
 - run-ui.bat starts the WebView desktop UI.
-- run-egui.bat starts the fallback egui desktop UI.
-- run-webui.bat starts the local web API/UI at http://127.0.0.1:8080/.
-  You can pass a port as the first argument, for example: run-webui.bat 8766
 - run-cli-example.bat runs the CLI against the uploads folder and writes to results.
   Add or edit config\example.json before using that example command.
 
