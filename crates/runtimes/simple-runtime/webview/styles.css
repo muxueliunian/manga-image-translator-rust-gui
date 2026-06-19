@@ -754,16 +754,6 @@ textarea.prompt-area {
   font-size: 12px;
 }
 
-.progress-wrap {
-  display: grid;
-  grid-template-columns: minmax(140px, 220px) auto;
-  align-items: center;
-  gap: 8px;
-  margin-top: 6px;
-  color: var(--muted);
-  font-size: 11px;
-}
-
 .progress-track {
   height: 4px;
   overflow: hidden;
@@ -1187,11 +1177,33 @@ svg {
 }
 
 /* ── Canvas (visual focus) ── */
+/* Center column: collapsible preview · resizer · progress strip · terminal. */
 .canvas {
   display: grid;
-  grid-template-rows: minmax(0, 1fr) auto;
+  grid-template-rows: var(--preview-height, 300px) 6px auto minmax(0, 1fr);
   min-width: 0;
+  min-height: 0;
   background: var(--bg);
+}
+
+.canvas.preview-collapsed {
+  grid-template-rows: 0 0 auto minmax(0, 1fr);
+}
+
+.canvas.preview-collapsed .canvas-stage,
+.canvas.preview-collapsed .canvas-resizer {
+  display: none;
+}
+
+.canvas-resizer {
+  cursor: ns-resize;
+  background: transparent;
+  transition: background 140ms ease;
+}
+
+.canvas-resizer:hover,
+.canvas-resizer.is-dragging {
+  background: var(--accent-soft);
 }
 
 .canvas-stage {
@@ -1235,92 +1247,169 @@ svg {
   overflow: visible;
 }
 
-/* ── Status bar: top status row + full-width resizable run log (P2.5) ── */
-.statusbar {
-  position: relative;
+/* ── Progress strip: full-width bar pinned above the terminal ── */
+.progress-strip {
   display: flex;
   flex-direction: column;
-  height: var(--statusbar-height, 150px);
-  min-height: 92px;
+  gap: 5px;
+  padding: 7px var(--space-3);
   border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
   background: var(--surface);
 }
 
-/* Drag handle straddling the top edge; raises the bar to grow the log. */
-.statusbar-resizer {
-  position: absolute;
-  top: -3px;
-  left: 0;
-  right: 0;
-  height: 7px;
-  cursor: ns-resize;
-  z-index: 5;
-}
-
-.statusbar-resizer:hover,
-.statusbar-resizer.is-dragging {
-  background: var(--accent-soft);
-}
-
-.statusbar-top {
-  flex: 0 0 auto;
+.progress-meta {
   display: flex;
-  align-items: center;
-  gap: var(--space-4);
-  padding: 6px var(--space-3);
-  border-bottom: 1px solid var(--line);
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-3);
+  min-width: 0;
 }
 
-.statusbar-info {
+.progress-status {
   display: flex;
-  flex-direction: column;
-  min-width: 150px;
-  max-width: 280px;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+  overflow: hidden;
 }
 
-.statusbar-info strong {
+.progress-status strong {
+  flex: none;
   font-size: 12px;
   font-weight: 600;
 }
 
-.statusbar-info #statusText {
-  margin: 0;
+.progress-status #statusText {
+  min-width: 0;
+  overflow: hidden;
   color: var(--muted);
   font-size: 11px;
-  overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.statusbar .progress-wrap {
-  margin: 0;
-  flex: 0 0 auto;
-}
-
-/* Numeric progress readout uses the mono HUD face. */
-#progressLabel {
+/* Numeric progress readout (size · speed · ETA · %) in the mono HUD face. */
+.progress-detail {
+  flex: none;
+  max-width: 60%;
+  overflow: hidden;
+  color: var(--muted);
   font-family: var(--font-mono);
   font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.statusbar-top-spacer {
-  flex: 1 1 auto;
+/* ── Terminal: the run log styled like a console ── */
+.terminal {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--bg);
 }
 
-.statusbar-log-title {
+.terminal-head {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding: 5px var(--space-3);
+}
+
+.terminal-title {
   margin: 0;
+  color: var(--muted);
   font-size: 11px;
   font-weight: 600;
   letter-spacing: 0.04em;
   text-transform: uppercase;
-  color: var(--muted);
 }
 
-.statusbar .log-list {
-  flex: 1;
+.terminal-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.terminal .log-list {
+  flex: 1 1 auto;
   min-height: 0;
   height: auto;
-  padding: 6px var(--space-3);
+  gap: 0;
+  padding: 4px var(--space-3) 8px;
+}
+
+/* Compact monospace rows; level shown by a left accent, actions on hover. */
+.terminal .log-entry {
+  border: none;
+  border-left: 2px solid transparent;
+  border-radius: 0;
+  background: transparent;
+  padding: 1px 8px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.55;
+}
+
+.terminal .log-entry:hover {
+  background: var(--surface-muted);
+}
+
+.terminal .log-entry[data-level="info"] {
+  border-left-color: transparent;
+  background: transparent;
+}
+
+.terminal .log-entry[data-level="success"] {
+  border-left-color: var(--success);
+  background: transparent;
+}
+
+.terminal .log-entry[data-level="warn"] {
+  border-left-color: var(--warn);
+  background: transparent;
+}
+
+.terminal .log-entry[data-level="error"] {
+  border-left-color: var(--danger);
+  background: transparent;
+}
+
+.terminal .log-entry[data-level="warn"] .log-summary {
+  color: var(--warn);
+}
+
+.terminal .log-entry[data-level="error"] .log-summary {
+  color: var(--danger);
+}
+
+.terminal .log-entry[data-level="success"] .log-summary {
+  color: var(--success);
+}
+
+.terminal .log-head {
+  gap: 8px;
+  align-items: baseline;
+}
+
+.terminal .log-time {
+  opacity: 0.65;
+}
+
+.terminal .log-summary {
+  font-family: var(--font-mono);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.terminal .log-actions {
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+
+.terminal .log-entry:hover .log-actions {
+  opacity: 1;
 }
 
 /* ── Inspector accordion (P2): PS-style dockable property groups ── */
@@ -1691,41 +1780,205 @@ svg {
 
 .modal-panel {
   width: 100%;
-  max-width: 560px;
-  max-height: 80vh;
+  max-width: 540px;
+  max-height: 82vh;
   display: flex;
   flex-direction: column;
-  overflow: auto;
+  overflow: hidden;
   border: 1px solid var(--line-strong);
   border-radius: var(--radius);
   background: var(--surface);
   box-shadow: 0 16px 48px rgba(0, 0, 0, 0.4);
 }
 
+/* Header stays pinned; only the body scrolls (close button always reachable). */
 .modal-head {
+  flex: none;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: var(--space-2);
-  padding: 12px var(--space-3);
+  padding: 14px var(--space-4);
   border-bottom: 1px solid var(--line);
 }
 
 .modal-head h2 {
   margin: 0;
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.icon-close {
+  flex: none;
+  width: 28px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  transition: background 140ms ease, color 140ms ease;
+}
+
+.icon-close:hover {
+  background: var(--surface-muted);
+  color: var(--text);
+}
+
+.icon-close svg {
+  display: block;
 }
 
 .modal-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
   display: flex;
   flex-direction: column;
-  gap: var(--space-3);
-  padding: var(--space-3);
+  gap: var(--space-4);
+  padding: var(--space-4);
+}
+
+/* ── Model directory block ── */
+.models-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.models-dir-label {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.models-dir-row {
+  display: flex;
+  align-items: stretch;
+  gap: var(--space-2);
+}
+
+.models-dir-row input {
+  flex: 1 1 auto;
+  min-width: 0;
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  text-overflow: ellipsis;
+}
+
+.models-dir-row .secondary-button {
+  flex: none;
+  white-space: nowrap;
+}
+
+.models-section .model-hint {
+  margin: 2px 0 0;
+}
+
+.models-section .check-field {
+  margin-top: var(--space-1);
 }
 
 .models-status:empty {
   display: none;
+}
+
+/* ── Model-management status table (M1b) ── */
+.models-status {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.models-status-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  margin-bottom: var(--space-1);
+}
+
+.models-status-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.models-status-actions {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.models-status-empty {
+  margin: var(--space-2) 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.models-kind-header {
+  margin-top: var(--space-2);
+  padding-bottom: 2px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.models-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 5px var(--space-1);
+  border-radius: var(--radius-sm);
+}
+
+.models-row:hover {
+  background: var(--surface-muted);
+}
+
+.models-dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: var(--radius-pill);
+}
+
+.models-dot.ready {
+  background: #5a9d6b;
+}
+
+.models-dot.missing {
+  background: var(--muted);
+  opacity: 0.5;
+}
+
+.models-label {
+  flex: 1;
+  overflow: hidden;
+  color: var(--text);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.models-meta {
+  flex: none;
+  color: var(--muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.models-download {
+  flex: none;
+  padding: 2px 10px;
+  font-size: 11px;
 }
 
 /* ── Canvas single-click preview + pan/zoom viewer (P3b/P4) ── */
