@@ -612,6 +612,7 @@ fn run_download_jobs(
     }
     let mut ok = 0;
     let mut failed = 0;
+    let mut skipped = 0;
     for (index, job) in jobs.iter().enumerate() {
         let file_no = index + 1;
         let label = job.label;
@@ -685,20 +686,38 @@ fn run_download_jobs(
                 );
             }
             Err(err) => {
-                failed += 1;
-                send_log(
-                    proxy,
-                    "error",
-                    format!("下载失败 {} / {}: {err}", job.label, job.file),
-                );
+                let msg = err.to_string();
+                // Some catalog variants are listed but never published in the
+                // upstream release (404). Treat those as skipped, not failures,
+                // so "download all missing" stays clean.
+                if msg.contains("404") {
+                    skipped += 1;
+                    send_log(
+                        proxy,
+                        "warn",
+                        format!("⊘ {} / {} 上游未发布(404)，跳过", job.label, job.file),
+                    );
+                } else {
+                    failed += 1;
+                    send_log(
+                        proxy,
+                        "error",
+                        format!("下载失败 {} / {}: {msg}", job.label, job.file),
+                    );
+                }
             }
         }
     }
+    let tail = if skipped > 0 {
+        format!("，跳过 {skipped}")
+    } else {
+        String::new()
+    };
     send_progress(
         proxy,
         total,
         total,
-        format!("模型下载完成（成功 {ok}，失败 {failed}）"),
+        format!("模型下载完成（成功 {ok}，失败 {failed}{tail}）"),
     );
     (ok, failed)
 }
@@ -1010,6 +1029,8 @@ async fn run_translation_job(
         ),
     );
 
+    // Translation always writes to an internal temp dir (preview reads from
+    // there). Saving to a user folder is the job of "Export selected".
     let output_dir = internal_results_dir();
     create_dir_all(&output_dir)?;
 
@@ -1023,6 +1044,7 @@ async fn run_translation_job(
     let timer = StageTimer::start("model-prepare", Some(&logger));
     ensure_models(&models, &logger).await?;
     timer.finish();
+    send_log(&proxy, "info", format!("模型已就绪，开始处理 {total} 张"));
 
     let output_slots: Arc<AsyncMutex<Vec<Option<TranslationOutput>>>> =
         Arc::new(AsyncMutex::new((0..total).map(|_| None).collect()));
@@ -1239,6 +1261,16 @@ async fn process_one(
     debug: bool,
 ) -> Result<Option<PathBuf>> {
     let image_timer = Instant::now();
+    let file_name = input
+        .file_name()
+        .and_then(|value| value.to_str())
+        .unwrap_or("image")
+        .to_owned();
+    send_log(
+        proxy,
+        "info",
+        format!("▶ [{}/{}] {}", index + 1, total, file_name),
+    );
     let img = image::open(input)?;
     let debug_path = if debug {
         Some(diagnostics_path(logger, index, input)?)
@@ -1248,40 +1280,62 @@ async fn process_one(
     let exp = {
         let _gpu_permit = gpu_semaphore.acquire().await?;
         let model_state = shared_models(models, logger).await?;
-        let file_name = input
-            .file_name()
-            .and_then(|value| value.to_str())
-            .unwrap_or("image")
-            .to_owned();
-        let mut stage_sender = |stage: &'static str| {
-            send_progress(proxy, index, total, format!("{}：{}", file_name, stage));
+        // Stream pipeline stages to the terminal. The status bar always shows the
+        // current stage; in debug mode each line also reports the *previous*
+        // stage's elapsed time (timed between callbacks), nested under the ▶ line.
+        let mut last_stage: Option<(&'static str, Instant)> = None;
+        let result = {
+            let mut stage_sender = |stage: &'static str| {
+                send_progress(proxy, index, total, format!("{}：{}", file_name, stage));
+                if debug {
+                    let now = Instant::now();
+                    if let Some((prev, started)) = last_stage.take() {
+                        send_log(
+                            proxy,
+                            "info",
+                            format!(
+                                "    {} · {} {}",
+                                file_name,
+                                prev,
+                                format_duration(started.elapsed())
+                            ),
+                        );
+                    }
+                    last_stage = Some((stage, now));
+                }
+            };
+            model_state
+                .execute_with_progress_and_logger(
+                    img,
+                    settings,
+                    debug_path,
+                    Some(&mut stage_sender),
+                    Some(logger),
+                )
+                .await?
         };
-        model_state
-            .execute_with_progress_and_logger(
-                img,
-                settings,
-                debug_path,
-                Some(&mut stage_sender),
-                Some(logger),
-            )
-            .await?
+        if debug {
+            if let Some((prev, started)) = last_stage {
+                send_log(
+                    proxy,
+                    "info",
+                    format!(
+                        "    {} · {} {}",
+                        file_name,
+                        prev,
+                        format_duration(started.elapsed())
+                    ),
+                );
+            }
+        }
+        result
     };
     let Some(exp) = exp else {
+        send_log(proxy, "warn", format!("⊘ {} · 未检测到文本", file_name));
         return Ok(None);
     };
 
-    send_progress(
-        proxy,
-        index,
-        total,
-        format!(
-            "{}：渲染嵌字",
-            input
-                .file_name()
-                .and_then(|value| value.to_str())
-                .unwrap_or("image")
-        ),
-    );
+    send_progress(proxy, index, total, format!("{}：渲染嵌字", file_name));
     let mut output = output_dir.join(
         input
             .file_name()
@@ -1301,6 +1355,15 @@ async fn process_one(
         format!(
             "image output written: {} ({})",
             output.display(),
+            format_duration(image_timer.elapsed())
+        ),
+    );
+    send_log(
+        proxy,
+        "success",
+        format!(
+            "✓ {} · {}",
+            file_name,
             format_duration(image_timer.elapsed())
         ),
     );
