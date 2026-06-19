@@ -275,9 +275,32 @@ favicon 能命中 handler)。
 ## M1 — 模型管理(M1a 已完成 2026-06-19;M1b 待续)
 
 ### 进度
-- **M1a ✅(可配置模型根 + 持久化)**:已实现、编译通过、打包成功;**未目检**(用户授权先 commit,次日测)。
-- **M1b ⏳(模型状态表 + 一键下载 + 自动下载)**:未开工。
-- 决策(用户 2026-06-19):**严格无默认**(webview 强制,egui/CLI 回退老默认不破坏)、M1b 用 **trait `files()`**、模型页 = **工具栏按钮 + 弹出面板**。
+- **M1a ✅(可配置模型根 + 持久化)**:已实现、编译通过、打包成功;目检通过(模型落到外部目录 `本子翻译\model`,布局 `<kind>/<name>/<files>` 正确,不再每次重下)。
+- **M1b ✅(模型状态表 + 下载 + 自动下载)**:已实现、`cargo fmt`+`cargo check` 通过;打包/目检留次日。详见下「M1b 实现记录」。
+- 决策(用户 2026-06-19):**严格无默认**(webview 强制,egui/CLI 回退老默认不破坏)、M1b 用 **trait `files()`**、模型页 = **工具栏按钮 + 弹出面板**、状态表**列全部已注册模型**。
+
+### M1b 实现记录(2026-06-19)
+- **`Model` trait 加 `files() -> Vec<(&'static str key, String file)>`**(默认空):返回该模块 `models()` 里**全部** key 的 (key,file) 映射(不只当前选中)。12 个可下载模块各实现;dynamic upscaler(waifu2x/esrgan/anime4k)直接从 `models()` 键派生 `{key}.onnx`;color/native/tesseract 用默认空(不进状态表)。
+- **`interface_model::db` 加两个公开 API**:`model_file_ready(kind,name,file,hash)`(复用 `failure()` 判断就绪,**不下载**;目录未设时 Err→前端视为缺失)、`download_model_file(...)`(Result 版下载,重试 3 次不 panic)。
+- **`setup/models_catalog.rs`(新)**:`registry()` 构造每个具体类型(已 impl `Model`)box 成 `Box<dyn Model>`(仅分配空 wrapper,不加载 ONNX)。`model_catalog()`→按 kind 分组的 `ModelGroupStatus{id,kind,label,ready,files}`(Serialize,camelCase);`download_jobs(ids)`→缺失文件下载任务;`selected_core_download_jobs(settings)`→当前选中 detector/ocr/inpainter 的缺失项(供自动下载)。
+- **⚠ 关键 quirk**:waifu2x/esrgan/anime4k **三者都声明 `name()="waifu2x"`** 共用 `upscaler/waifu2x/` 目录(文件名互不冲突)。故 group 唯一键用自定义 `id`(dbnet/.../waifu2x/esrgan/anime4k),**不能**用 `kind/name`(会把三者混成一组下全 48 个)。
+- **webview IPC**:`GetModelsStatus`(同步,返回 `{modelDir,modelDirSet,groups}`)、`DownloadModels{targets:[id]}`(异步线程+progress/log,空 targets=全部缺失,逐文件 `download_model_file`,完成回传新状态)。启动时若 `auto_download` 开 + 目录已设 → 后台线程下 `selected_core_download_jobs`。
+- **自动下载范围决策**:状态表列**全部**模型(用户选),但「启动自动下载」**只下当前选中的 detector/ocr/inpainter**(+ 不含 upscaler)。原因:upscaler `files()` 含全部变体(36/6/6),自动全下不合理;upscaler 仍按需在首次推理下载。状态表里每个 upscaler 组有独立「下载」按钮,用户显式点才下该组全部变体。
+- **前端**:模型 modal `#modelsStatus` 渲染分组状态表(kind 分节 + 就绪点 + `N/M 文件` + 每组「下载」按钮 + 顶部「下载全部缺失」/「刷新」);打开 modal/选目录后拉 `getModelsStatus`;下载走 `downloadModels`,progress 复用底部状态栏。i18n 中英齐。CSS 用现有 token。
+- **未做(留 M1c 可选)**:patch 统一 git 0.11.0 的 interface-model → 本地翻译器模型也听配置根。本地翻译器模型仍走老路径重下;API 翻译器不受影响。
+
+### 中间栏终端式重构(2026-06-19,用户要求)
+**动机**:加长下载文案后,旧 `.statusbar-top` flex 行(进度 label `auto` 宽不截断)撑爆中间列、**溢出压到右侧 inspector**;用户要求中间栏改"终端形式"。**决策**(AskUserQuestion):上下分屏 = **预览(可折叠)/ 独立进度条 strip / 终端**;debug 输出**只重排现有日志、不动后端**。
+- `.canvas` 网格改 `var(--preview-height,300px) 6px auto minmax(0,1fr)` = 预览 / resizer / 进度strip / 终端;`.preview-collapsed` 时前两行塌为 0。
+- **`.progress-strip`**:`meta` 行(状态标题+文案 / 进度 detail,两侧各自截断)+ **全宽进度条**独占一行 → 溢出根除。`#progressLabel` 改类 `.progress-detail`(等宽、max-width 60%、截断)。
+- **`.terminal`**:`.log-list` 改 flex 填充(去掉固定 220px);日志行重排成**控制台风格**——等宽、无卡片边框、按 level 显示**左色边**(info 无、success/warn/error 彩色)、时间戳淡化、`复制/展开`**hover 才显**。
+- 预览 `resizer`(`initPreviewResizer`,改 `--preview-height` 存 `mitWebviewPreviewHeight`)+ 折叠 toggle(终端头「隐藏/显示预览」,存 `mitWebviewPreviewCollapsed`);取代旧 `initLogResizer`/`--statusbar-height`。语言切换后回填折叠按钮文案。
+- 旧 `.statusbar*`/`.progress-wrap` CSS 已删。**纯前端**,`cargo check`+打包通过。
+
+### M1b 目检反馈修订(2026-06-19,用户首测后)
+下载落点正确;两处改进已实现、编译+打包通过:
+- **字节级下载进度**:`db.rs::download_and_extract` 加可选 `progress: Option<&mut dyn FnMut(u64,u64)>`(推理路径 `ModelDb::get` 传 `None` 不变),`download_model_file` 透传;原 `ProgressReader`+`io::copy` 改手动读循环(保留 indicatif 控制台条)。webview `run_download_jobs` 给每个文件挂节流(~150ms)回调,发 `ProgressEvent{current=文件序号,total=文件数,percent=字节%,message}`,文案含 `已下/总大小 · 速度/s · 剩 ETA`(`fmt_bytes`/`fmt_eta` 助手);前端 `updateProgress` 自动补 `· n/total · p%`,故 message 不再重复文件计数。
+- **模型弹窗 UI 重做**:`关闭`文字钮 → **× SVG 图标钮**(`.icon-close`);`.modal-panel overflow:auto`(整面板滚动致头部滚走)→ `overflow:hidden` + 头部 `flex:none` + body 独立滚动(**关闭键恒可达**);目录选择器原 `.path-picker` 32px 按钮列把「选择目录」挤成竖排、撑大输入框 → 改 `.models-dir-row` flex + 自动宽度按钮 + 等宽单行路径。`.modal-head/.modal-body/.modal-panel` 为全局但仅此 modal 使用。
 
 ### M1a 实现记录
 - `interface_model`(本地 0.12.2)加全局 `static MODEL_ROOT: RwLock<ModelRootMode{Default|Configured(PathBuf)|RequireConfigured}>`
@@ -320,7 +343,5 @@ favicon 能命中 handler)。
 - 风险:下载需异步 + 进度;路径未设时推理要拦截并提示去模型页设置;hash 校验沿用现有 `failure()`。
 
 ### 现状提示
-M1a 已完成(未目检,已 commit)。下一步:M1b(状态表+一键下载)与可选 M1c(patch 统一翻译器模型)。
-M1b 实现要点(开工时细化):给 `Model` trait 加 `files() -> Vec<(key,file)>`(22 模块各声明,默认空)→
-逐文件用 `failure()` 判断已下载/缺失;新增 IPC `GetModelsStatus`/`DownloadModels`(异步+progress);
-前端在模型面板 `#modelsStatus` 渲染状态表 + 下载按钮;启动自动下载读 `models.json.auto_download`。
+M1a 目检通过。M1b 已实现并通过 `cargo fmt`+`cargo check`(打包后台进行中,目检留次日)。
+剩余仅可选 **M1c**(patch 统一 git 0.11.0 interface-model → 本地翻译器模型也听配置根)。详见上「M1b 实现记录」。
