@@ -76,6 +76,21 @@ const i18n = {
     chooseDir: "选择目录",
     autoDownload: "启动时自动下载缺失模型",
     close: "关闭",
+    modelsStatusTitle: "模型状态",
+    refresh: "刷新",
+    modelsDirNotSet: "尚未设置模型目录，无法检测状态。请先在上方选择目录。",
+    modelKindDetector: "检测",
+    modelKindOcr: "OCR",
+    modelKindInpainter: "修补",
+    modelKindUpscaler: "放大",
+    modelReady: "已就绪",
+    modelMissing: "缺失",
+    modelFilesCount: "{ready}/{total} 文件",
+    modelDownload: "下载",
+    modelDownloading: "下载中…",
+    modelDownloadMissingAll: "下载全部缺失",
+    modelStatusLoading: "正在检测模型状态…",
+    modelStatusError: "无法获取模型状态：{err}",
     tabTranslation: "翻译",
     tabDetectionOcr: "检测 / OCR",
     tabInpaintMask: "修补 / Mask",
@@ -147,6 +162,9 @@ const i18n = {
     remove: "删除",
     logTitle: "运行记录",
     logResizeHint: "拖拽调整运行记录高度",
+    previewResizeHint: "拖拽调整预览高度",
+    hidePreview: "隐藏预览",
+    showPreview: "显示预览",
     clearLog: "清空",
     logEmpty: "暂无日志",
     copy: "复制",
@@ -254,6 +272,21 @@ const i18n = {
     chooseDir: "Choose Folder",
     autoDownload: "Auto-download missing models on startup",
     close: "Close",
+    modelsStatusTitle: "Model Status",
+    refresh: "Refresh",
+    modelsDirNotSet: "Model directory not set; status unavailable. Choose a folder above first.",
+    modelKindDetector: "Detection",
+    modelKindOcr: "OCR",
+    modelKindInpainter: "Inpainting",
+    modelKindUpscaler: "Upscaling",
+    modelReady: "Ready",
+    modelMissing: "Missing",
+    modelFilesCount: "{ready}/{total} files",
+    modelDownload: "Download",
+    modelDownloading: "Downloading…",
+    modelDownloadMissingAll: "Download all missing",
+    modelStatusLoading: "Checking model status…",
+    modelStatusError: "Failed to get model status: {err}",
     tabTranslation: "Translation",
     tabDetectionOcr: "Detection / OCR",
     tabInpaintMask: "Inpaint / Mask",
@@ -325,6 +358,9 @@ const i18n = {
     remove: "Remove",
     logTitle: "Run Log",
     logResizeHint: "Drag to resize the run log",
+    previewResizeHint: "Drag to resize the preview",
+    hidePreview: "Hide preview",
+    showPreview: "Show preview",
     clearLog: "Clear",
     logEmpty: "No logs yet",
     copy: "Copy",
@@ -382,8 +418,10 @@ const IMAGE_EXTENSIONS = new Set([
 const LOG_SUMMARY_LIMIT = 140;
 const PATH_DISPLAY_LIMIT = 56;
 const CUDA_SUMMARY_LIMIT = 96;
-const LOG_HEIGHT_KEY = "mitWebviewLogHeight";
-const LOG_HEIGHT_MIN = 92;
+const PREVIEW_HEIGHT_KEY = "mitWebviewPreviewHeight";
+const PREVIEW_COLLAPSE_KEY = "mitWebviewPreviewCollapsed";
+const PREVIEW_HEIGHT_MIN = 120;
+const PREVIEW_HEIGHT_DEFAULT = 300;
 const FILMSTRIP_WIDTH_KEY = "mitFilmstripWidth";
 const FILMSTRIP_WIDTH_MIN = 160;
 const FILMSTRIP_WIDTH_MAX = 520;
@@ -517,8 +555,9 @@ const els = {
   resultsResizer: document.getElementById("resultsResizer"),
   logList: document.getElementById("logList"),
   clearLog: document.getElementById("clearLog"),
-  statusbar: document.querySelector(".statusbar"),
-  logResizer: document.getElementById("logResizer"),
+  canvas: document.querySelector(".canvas"),
+  previewResizer: document.getElementById("previewResizer"),
+  togglePreview: document.getElementById("togglePreview"),
 };
 
 window.MIT_BRIDGE = {
@@ -1925,26 +1964,35 @@ async function exportSelectedResults() {
   }
 }
 
-function logHeightMax() {
-  return Math.max(LOG_HEIGHT_MIN, window.innerHeight - 220);
+function previewHeightMax() {
+  return Math.max(PREVIEW_HEIGHT_MIN, window.innerHeight - 260);
 }
 
-// Apply a status-bar height (which drives the run-log area) via a CSS var,
-// clamped so it never swallows the workspace. Returns the clamped value.
-function applyLogHeight(px) {
-  const clamped = Math.max(LOG_HEIGHT_MIN, Math.min(logHeightMax(), Math.round(px)));
-  document.documentElement.style.setProperty("--statusbar-height", `${clamped}px`);
+// Apply the preview-region height (top of the center column) via a CSS var,
+// clamped so the terminal below keeps usable space. Returns the clamped value.
+function applyPreviewHeight(px) {
+  const clamped = Math.max(PREVIEW_HEIGHT_MIN, Math.min(previewHeightMax(), Math.round(px)));
+  document.documentElement.style.setProperty("--preview-height", `${clamped}px`);
   return clamped;
 }
 
-// Drag the top edge of the status bar to resize the run log; persist the height.
-function initLogResizer() {
-  const handle = els.logResizer;
-  const bar = els.statusbar;
-  if (!handle || !bar) return;
+// Collapse/expand the preview region; the terminal takes the freed space.
+function setPreviewCollapsed(collapsed) {
+  els.canvas.classList.toggle("preview-collapsed", collapsed);
+  els.togglePreview.textContent = collapsed ? t("showPreview") : t("hidePreview");
+  els.togglePreview.setAttribute("aria-pressed", String(collapsed));
+  localStorage.setItem(PREVIEW_COLLAPSE_KEY, collapsed ? "1" : "0");
+}
 
-  const saved = Number(localStorage.getItem(LOG_HEIGHT_KEY));
-  if (Number.isFinite(saved) && saved > 0) applyLogHeight(saved);
+// Drag the divider under the preview to resize it; persist the height.
+function initPreviewResizer() {
+  const handle = els.previewResizer;
+  const stage = els.canvasStage;
+  if (!handle || !stage || !els.canvas) return;
+
+  const saved = Number(localStorage.getItem(PREVIEW_HEIGHT_KEY));
+  applyPreviewHeight(Number.isFinite(saved) && saved > 0 ? saved : PREVIEW_HEIGHT_DEFAULT);
+  if (localStorage.getItem(PREVIEW_COLLAPSE_KEY) === "1") setPreviewCollapsed(true);
 
   let startY = 0;
   let startH = 0;
@@ -1953,21 +2001,22 @@ function initLogResizer() {
 
   const onMove = (event) => {
     if (!dragging) return;
-    lastH = applyLogHeight(startH + (startY - event.clientY));
+    lastH = applyPreviewHeight(startH + (event.clientY - startY));
   };
   const onUp = () => {
     if (!dragging) return;
     dragging = false;
     handle.classList.remove("is-dragging");
-    localStorage.setItem(LOG_HEIGHT_KEY, String(lastH));
+    localStorage.setItem(PREVIEW_HEIGHT_KEY, String(lastH));
     window.removeEventListener("pointermove", onMove);
     window.removeEventListener("pointerup", onUp);
   };
 
   handle.addEventListener("pointerdown", (event) => {
+    if (els.canvas.classList.contains("preview-collapsed")) return;
     dragging = true;
     startY = event.clientY;
-    startH = bar.offsetHeight;
+    startH = stage.offsetHeight;
     lastH = startH;
     handle.classList.add("is-dragging");
     window.addEventListener("pointermove", onMove);
@@ -1978,11 +2027,15 @@ function initLogResizer() {
   handle.addEventListener("keydown", (event) => {
     if (event.key !== "ArrowUp" && event.key !== "ArrowDown") return;
     event.preventDefault();
-    lastH = applyLogHeight(bar.offsetHeight + (event.key === "ArrowUp" ? 24 : -24));
-    localStorage.setItem(LOG_HEIGHT_KEY, String(lastH));
+    lastH = applyPreviewHeight(stage.offsetHeight + (event.key === "ArrowDown" ? 24 : -24));
+    localStorage.setItem(PREVIEW_HEIGHT_KEY, String(lastH));
   });
 
-  window.addEventListener("resize", () => applyLogHeight(bar.offsetHeight));
+  window.addEventListener("resize", () => {
+    if (!els.canvas.classList.contains("preview-collapsed")) {
+      applyPreviewHeight(stage.offsetHeight);
+    }
+  });
 }
 
 function applyFilmstripWidth(px) {
@@ -2090,12 +2143,123 @@ function initResultsResizer() {
 
 // ── Model management modal (M1) ──
 async function openModelsModal() {
+  els.modelsModal.hidden = false;
   try {
     applyModelsConfig(await invoke("getModelsConfig"));
   } catch (err) {
     addLog("error", err.message);
   }
-  els.modelsModal.hidden = false;
+  refreshModelsStatus();
+}
+
+// Pull the downloaded/missing table and render it. Called on modal open, after
+// picking a dir, and after a download finishes.
+async function refreshModelsStatus() {
+  els.modelsStatus.innerHTML = `<p class="models-status-empty">${t("modelStatusLoading")}</p>`;
+  try {
+    renderModelsStatus(await invoke("getModelsStatus"));
+  } catch (err) {
+    els.modelsStatus.innerHTML = `<p class="models-status-empty">${t("modelStatusError", { err: err.message })}</p>`;
+  }
+}
+
+const MODEL_KIND_LABELS = {
+  detector: "modelKindDetector",
+  ocr: "modelKindOcr",
+  inpainter: "modelKindInpainter",
+  upscaler: "modelKindUpscaler",
+};
+
+function renderModelsStatus(data) {
+  const status = els.modelsStatus;
+  status.innerHTML = "";
+
+  const head = document.createElement("div");
+  head.className = "models-status-head";
+  const title = document.createElement("span");
+  title.className = "models-status-title";
+  title.textContent = t("modelsStatusTitle");
+  head.appendChild(title);
+  const actions = document.createElement("div");
+  actions.className = "models-status-actions";
+  const groups = (data && data.groups) || [];
+  if (data && data.modelDirSet && groups.some((g) => !g.ready)) {
+    const dlAll = document.createElement("button");
+    dlAll.type = "button";
+    dlAll.className = "secondary-button";
+    dlAll.dataset.modelDownload = "*";
+    dlAll.textContent = t("modelDownloadMissingAll");
+    actions.appendChild(dlAll);
+  }
+  const refreshBtn = document.createElement("button");
+  refreshBtn.type = "button";
+  refreshBtn.className = "ghost-button";
+  refreshBtn.dataset.modelRefresh = "1";
+  refreshBtn.textContent = t("refresh");
+  actions.appendChild(refreshBtn);
+  head.appendChild(actions);
+  status.appendChild(head);
+
+  if (!data || !data.modelDirSet) {
+    const empty = document.createElement("p");
+    empty.className = "models-status-empty";
+    empty.textContent = t("modelsDirNotSet");
+    status.appendChild(empty);
+    return;
+  }
+
+  let lastKind = null;
+  groups.forEach((group) => {
+    if (group.kind !== lastKind) {
+      lastKind = group.kind;
+      const header = document.createElement("div");
+      header.className = "models-kind-header";
+      header.textContent = t(MODEL_KIND_LABELS[group.kind] || group.kind);
+      status.appendChild(header);
+    }
+    const files = group.files || [];
+    const readyCount = files.filter((f) => f.ready).length;
+    const row = document.createElement("div");
+    row.className = "models-row";
+    const dot = document.createElement("span");
+    dot.className = `models-dot ${group.ready ? "ready" : "missing"}`;
+    const label = document.createElement("span");
+    label.className = "models-label";
+    label.textContent = group.label;
+    const meta = document.createElement("span");
+    meta.className = "models-meta";
+    meta.textContent = group.ready
+      ? t("modelReady")
+      : t("modelFilesCount", { ready: readyCount, total: files.length });
+    row.append(dot, label, meta);
+    if (!group.ready) {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "secondary-button models-download";
+      btn.dataset.modelDownload = group.id;
+      btn.textContent = t("modelDownload");
+      row.appendChild(btn);
+    }
+    status.appendChild(row);
+  });
+}
+
+// Download the given group ids ([] = all missing). Progress streams to the
+// status bar via the shared progress/log events; the table refreshes on resolve.
+async function downloadModelTargets(targets, button) {
+  if (button) {
+    button.disabled = true;
+    button.textContent = t("modelDownloading");
+  }
+  try {
+    renderModelsStatus(await invoke("downloadModels", { targets }));
+  } catch (err) {
+    addLog("error", err.message);
+    if (button) {
+      button.disabled = false;
+      button.textContent = t("modelDownload");
+    }
+  }
 }
 
 function closeModelsModal() {
@@ -2111,7 +2275,10 @@ async function pickModelDir() {
   try {
     const cfg = await invoke("setModelsDir");
     applyModelsConfig(cfg);
-    if (cfg && cfg.model_dir) addLog("success", `${t("modelDir")}: ${cfg.model_dir}`);
+    if (cfg && cfg.model_dir) {
+      addLog("success", `${t("modelDir")}: ${cfg.model_dir}`);
+      refreshModelsStatus();
+    }
   } catch (err) {
     addLog("error", err.message);
   }
@@ -2128,7 +2295,7 @@ async function setAutoDownload(value) {
 async function bootstrap() {
   applyTheme(state.theme);
   applyLang();
-  initLogResizer();
+  initPreviewResizer();
   initFilmstripResizer();
   initResultsResizer();
   renderTree();
@@ -2138,6 +2305,11 @@ async function bootstrap() {
     state.lang = state.lang === "zh" ? "en" : "zh";
     localStorage.setItem("mitWebviewLang", state.lang);
     applyLang();
+    // applyLang reset the toggle to its data-i18n default; restore collapse label.
+    setPreviewCollapsed(els.canvas.classList.contains("preview-collapsed"));
+  });
+  els.togglePreview.addEventListener("click", () => {
+    setPreviewCollapsed(!els.canvas.classList.contains("preview-collapsed"));
   });
   els.themeToggle.addEventListener("click", () => {
     applyTheme(state.theme === "dark" ? "light" : "dark");
@@ -2153,6 +2325,15 @@ async function bootstrap() {
   els.closeModels.addEventListener("click", closeModelsModal);
   els.pickModelDir.addEventListener("click", pickModelDir);
   els.autoDownload.addEventListener("change", () => setAutoDownload(els.autoDownload.checked));
+  els.modelsStatus.addEventListener("click", (event) => {
+    const dl = event.target.closest("[data-model-download]");
+    if (dl) {
+      const id = dl.dataset.modelDownload;
+      downloadModelTargets(id === "*" ? [] : [id], dl);
+      return;
+    }
+    if (event.target.closest("[data-model-refresh]")) refreshModelsStatus();
+  });
   els.modelsModal.addEventListener("click", (event) => {
     if (event.target === els.modelsModal) closeModelsModal();
   });
