@@ -74,6 +74,14 @@ impl ModelLoad for MangaOCR {
 impl Model for MangaOCR {
     impl_model_helpers!("ocr", "manga-ocr", models);
 
+    fn files(&self) -> Vec<(&'static str, String)> {
+        vec![
+            ("enc", "encoder_model.onnx".into()),
+            ("dec", "decoder_model.onnx".into()),
+            ("vocab", "vocab.txt".into()),
+        ]
+    }
+
     fn models(&self) -> std::collections::HashMap<&'static str, interface_model::ModelSource> {
         hashmap! {
             "enc" => ModelSource { url: "https://huggingface.co/mayocream/manga-ocr-onnx/resolve/main/encoder_model.onnx?download=true", hash: "###" },

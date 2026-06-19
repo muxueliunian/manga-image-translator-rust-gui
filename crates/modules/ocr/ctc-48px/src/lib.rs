@@ -59,6 +59,13 @@ impl ModelLoad for Ctc48pxOcr {
 impl Model for Ctc48pxOcr {
     impl_model_helpers!("ocr", "ctc-48px", model);
 
+    fn files(&self) -> Vec<(&'static str, String)> {
+        vec![
+            ("model", "model.onnx".into()),
+            ("alphabet-all-v5", "alphabet-all-v5.txt".into()),
+        ]
+    }
+
     fn models(&self) -> std::collections::HashMap<&'static str, interface_model::ModelSource> {
         hashmap! {
             "model" => ModelSource { url: "https://github.com/frederik-uni/manga-image-translator-rust/releases/download/ctc-48px/model.onnx", hash: "###" },

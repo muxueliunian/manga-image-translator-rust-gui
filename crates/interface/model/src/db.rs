@@ -47,6 +47,68 @@ pub fn model_base_dir() -> anyhow::Result<PathBuf> {
     }
 }
 
+/// Resolve `<root>/<kind>/<name>/<file>` plus the directory used as the hash
+/// base, mirroring [`ModelDb::get`]'s path handling (folder downloads collapse to
+/// the parent dir). Shared by the readiness check and the download helper.
+fn resolve_file_path(
+    kind: &str,
+    name: &str,
+    file: &str,
+) -> anyhow::Result<(PathBuf, PathBuf, bool)> {
+    let base_path = model_base_dir()?.join(kind).join(name);
+    let mut file_path = base_path.join(file);
+    let folder = file.contains('/');
+    if folder {
+        file_path = file_path
+            .parent()
+            .expect("joined file always has a parent")
+            .to_path_buf();
+    }
+    Ok((base_path, file_path, folder))
+}
+
+/// Whether a single model file is present and (when a real hash is given) valid,
+/// **without** triggering any download. Used by the model-management UI to render
+/// downloaded/missing status. Errors only when the model root itself is
+/// unresolved (e.g. unset in the portable WebView).
+pub fn model_file_ready(kind: &str, name: &str, file: &str, hash: &str) -> anyhow::Result<bool> {
+    let (base_path, file_path, _) = resolve_file_path(kind, name, file)?;
+    Ok(!failure(Some(&base_path), &file_path, hash))
+}
+
+/// Download one model file into the configured root, returning its final path.
+/// Same retry/hash behaviour as inference-time loads ([`ModelDb::get`]) but
+/// returns an error instead of panicking on repeated failure, so the UI can
+/// report it per file and keep going.
+pub fn download_model_file(
+    kind: &str,
+    name: &str,
+    file: &str,
+    url: &str,
+    hash: &str,
+    progress: &mut dyn FnMut(u64, u64),
+) -> anyhow::Result<PathBuf> {
+    let (base_path, file_path, folder) = resolve_file_path(kind, name, file)?;
+    let ret_file_path = base_path.join(file);
+    std::fs::create_dir_all(
+        ret_file_path
+            .parent()
+            .expect("joined file always has a parent"),
+    )?;
+    let mut attempts = 0u8;
+    while failure(Some(&base_path), &file_path, hash) {
+        if attempts >= 3 {
+            return Err(anyhow!("下载失败（已重试 {attempts} 次）: {url}"));
+        }
+        if attempts > 0 {
+            let _ = std::fs::remove_file(&file_path);
+        }
+        download_and_extract(url, &file_path, folder, Some(&mut *progress))?;
+        attempts += 1;
+    }
+    Ok(ret_file_path)
+}
+
 pub struct ModelDb {}
 
 impl ModelDb {
@@ -71,13 +133,13 @@ impl ModelDb {
             folder = true;
         }
         if failure(Some(&base_path), &file_path, hash) {
-            download_and_extract(url, &file_path, folder)?;
+            download_and_extract(url, &file_path, folder, None)?;
             if failure(Some(&base_path), &file_path, hash) {
                 let _ = std::fs::remove_file(&file_path);
-                download_and_extract(url, &file_path, folder)?;
+                download_and_extract(url, &file_path, folder, None)?;
                 if failure(Some(&base_path), &file_path, hash) {
                     let _ = std::fs::remove_file(&file_path);
-                    download_and_extract(url, &file_path, folder)?;
+                    download_and_extract(url, &file_path, folder, None)?;
                     if failure(Some(&base_path), &file_path, hash) {
                         panic!()
                     }
@@ -262,7 +324,15 @@ fn failure<P: AsRef<Path>>(base_path: Option<P>, file_path: P, expected_hash: &s
     }
 }
 
-fn download_and_extract(url: &str, file_path: &Path, folder: bool) -> anyhow::Result<()> {
+/// `progress`, when given, is called with `(bytes_downloaded, total_bytes)` as
+/// the body streams in (`total` is 0 if the server omits Content-Length). It runs
+/// on the calling thread; callers should throttle their own UI updates.
+fn download_and_extract(
+    url: &str,
+    file_path: &Path,
+    folder: bool,
+    mut progress: Option<&mut dyn FnMut(u64, u64)>,
+) -> anyhow::Result<()> {
     info!("Downloading from: {}", url);
 
     let mut response = ureq::get(url).call()?;
@@ -286,35 +356,27 @@ fn download_and_extract(url: &str, file_path: &Path, folder: bool) -> anyhow::Re
         None
     };
 
-    struct ProgressReader<R> {
-        inner: R,
-        progress_bar: Option<ProgressBar>,
-        bytes_read: u64,
-    }
-
-    impl<R: Read> Read for ProgressReader<R> {
-        fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
-            let n = self.inner.read(buf)?;
-            self.bytes_read += n as u64;
-            if let Some(pb) = &self.progress_bar {
-                pb.set_position(self.bytes_read);
+    let mut temp_file = tempfile::tempfile()?;
+    {
+        let body = response.body_mut();
+        let mut reader = body.as_reader();
+        let mut buf = [0u8; 65536];
+        let mut downloaded = 0u64;
+        loop {
+            let n = reader.read(&mut buf)?;
+            if n == 0 {
+                break;
             }
-            Ok(n)
+            temp_file.write_all(&buf[..n])?;
+            downloaded += n as u64;
+            if let Some(pb) = &pb {
+                pb.set_position(downloaded);
+            }
+            if let Some(cb) = progress.as_deref_mut() {
+                cb(downloaded, total_size);
+            }
         }
     }
-
-    let mut temp_file = tempfile::tempfile()?;
-
-    let b = response.body_mut();
-    let b = b.as_reader();
-    let mut progress_reader = ProgressReader {
-        inner: b,
-        // allow:clone[arc]
-        progress_bar: pb.clone(),
-        bytes_read: 0,
-    };
-
-    std::io::copy(&mut progress_reader, &mut temp_file)?;
 
     if let Some(pb) = pb {
         pb.finish_with_message("Download complete");

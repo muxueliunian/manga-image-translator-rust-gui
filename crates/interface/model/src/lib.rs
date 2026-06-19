@@ -7,7 +7,9 @@ use tokio::sync::{RwLock, RwLockReadGuard};
 
 pub mod db;
 
-pub use db::{model_base_dir, set_model_root, ModelRootMode};
+pub use db::{
+    download_model_file, model_base_dir, model_file_ready, set_model_root, ModelRootMode,
+};
 
 pub type ModelWrap<T> = Arc<RwLock<Option<T>>>;
 pub struct ModelRead<'a, T> {
@@ -56,6 +58,13 @@ pub trait Model {
     fn name(&self) -> &'static str;
     fn kind(&self) -> &'static str;
     fn models(&self) -> HashMap<&'static str, ModelSource>;
+    /// Every `(models()-key, on-disk file)` pair this model can download, used by
+    /// the model-management UI to list and pre-fetch weights. Keys must exist in
+    /// [`Model::models`]. Default empty = nothing to manage (e.g. system OCR with
+    /// no downloadable weights).
+    fn files(&self) -> Vec<(&'static str, String)> {
+        Vec::new()
+    }
     async fn unload(&self);
     async fn download_model(&self, key: &str, file: &str) -> anyhow::Result<PathBuf> {
         let models = self.models();

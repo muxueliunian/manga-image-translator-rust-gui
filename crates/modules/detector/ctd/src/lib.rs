@@ -51,6 +51,10 @@ impl ModelLoad for CtdDetector {
 impl Model for CtdDetector {
     impl_model_helpers!("detector", "ctd", model);
 
+    fn files(&self) -> Vec<(&'static str, String)> {
+        vec![("model", "model.onnx".into())]
+    }
+
     fn models(&self) -> std::collections::HashMap<&'static str, ModelSource> {
         hashmap! {
             "model" => ModelSource { url: "https://github.com/frederik-uni/manga-image-translator-rust/releases/download/ctd-v1.0.0/model.onnx", hash: "c921d44fea30913a1689dcb4d28faef664dfd0c9f895146d27342e52b823ec0c" }

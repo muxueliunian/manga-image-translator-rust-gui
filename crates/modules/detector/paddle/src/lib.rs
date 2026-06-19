@@ -55,6 +55,10 @@ impl ModelLoad for PaddleDetector {
 impl Model for PaddleDetector {
     impl_model_helpers!("detector", "paddle", db_net);
 
+    fn files(&self) -> Vec<(&'static str, String)> {
+        vec![("det", "det.onnx".into())]
+    }
+
     fn models(&self) -> std::collections::HashMap<&'static str, ModelSource> {
         hashmap! {
             "det" => ModelSource { url: "https://github.com/frederik-uni/manga-image-translator-rust/releases/download/paddle-ocr-chinese-v4/det.onnx", hash: "b21a993484b367c0ea29d4a703c038d6ee3212173e6abf962b09188b032a9483" },

@@ -7718,6 +7718,7 @@ dependencies = [
  "interface-detector",
  "interface-image",
  "interface-inpainter",
+ "interface-model 0.12.2",
  "interface-ocr",
  "interface-translator",
  "interface-upscaler",

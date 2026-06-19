@@ -92,6 +92,13 @@ impl ModelLoad for EsrGan {
 #[async_trait::async_trait]
 impl Model for EsrGan {
     impl_model_helpers!("upscaler", "waifu2x", model);
+
+    fn files(&self) -> Vec<(&'static str, String)> {
+        self.models()
+            .into_iter()
+            .map(|(k, _)| (k, format!("{k}.onnx")))
+            .collect()
+    }
     fn models(&self) -> std::collections::HashMap<&'static str, interface_model::ModelSource> {
         hashmap! {
             "x2plus-f16" => ModelSource { url: "https://github.com/frederik-uni/manga-image-translator-rust/releases/download/realesrgan/x2plus-f16.onnx", hash: "###" },

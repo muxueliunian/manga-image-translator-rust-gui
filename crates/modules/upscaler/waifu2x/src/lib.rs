@@ -120,6 +120,13 @@ impl ModelLoad for Waifu2xUpscaler {
 
 impl Model for Waifu2xUpscaler {
     impl_model_helpers!("upscaler", "waifu2x", model);
+
+    fn files(&self) -> Vec<(&'static str, String)> {
+        self.models()
+            .into_iter()
+            .map(|(k, _)| (k, format!("{k}.onnx")))
+            .collect()
+    }
     fn models(&self) -> std::collections::HashMap<&'static str, interface_model::ModelSource> {
         hashmap! {
             "cunet-art-2x-noise0" => ModelSource { url: "https://github.com/frederik-uni/manga-image-translator-rust/releases/download/waifu2x-20250502/cunet-art-2x-noise0.onnx", hash: "###" },

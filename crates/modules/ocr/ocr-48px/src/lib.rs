@@ -77,6 +77,15 @@ impl ModelLoad for Ocr48px {
 impl Model for Ocr48px {
     impl_model_helpers!("ocr", "48px", model);
 
+    fn files(&self) -> Vec<(&'static str, String)> {
+        vec![
+            ("decoder", "decoder.onnx".into()),
+            ("encoder", "encoder.onnx".into()),
+            ("color_pred", "color_pred.onnx".into()),
+            ("alphabet-all-v7", "alphabet-all-v7.txt".into()),
+        ]
+    }
+
     fn models(&self) -> std::collections::HashMap<&'static str, interface_model::ModelSource> {
         hashmap! {
             "decoder" => ModelSource { url: "https://github.com/frederik-uni/manga-image-translator-rust/releases/download/ocr-48px/decoder.onnx", hash: "###" },
