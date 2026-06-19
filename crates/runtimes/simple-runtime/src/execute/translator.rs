@@ -29,7 +29,7 @@ impl Models {
                 self.run_translator_list(textblocks, items.as_slice(), config, debug_path, logger)
                     .await
             }
-            Target::Selective(hash_map) => todo!("selective not implemented yet"),
+            Target::Selective(_hash_map) => todo!("selective not implemented yet"),
         }
     }
 

@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::path::Path;
 
 use interface_image::RawImage;
 use opencv::{
@@ -7,7 +7,7 @@ use opencv::{
 };
 use textline_merge::TextBlock;
 
-pub fn render_textblocks(img: &RawImage, blk: &[TextBlock], path: &PathBuf) -> anyhow::Result<()> {
+pub fn render_textblocks(img: &RawImage, blk: &[TextBlock], path: &Path) -> anyhow::Result<()> {
     let lw = (img.as_ndarray().unwrap().shape().iter().sum::<usize>() as f64 / 2.0 * 0.003).max(2.0)
         as u32;
     let mut canvas = img.as_opencv_mat()?.clone_pointee();

@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use interface_image::{Mask, RawImage};
 use interface_inpainter::InpainterOptions;
 use log::info;
@@ -41,7 +39,7 @@ impl Models {
                     inpainting_size: config.inpainting_size,
                     color: config.inpaint_color,
                 },
-                &ip,
+                ip,
             )
             .await?;
 

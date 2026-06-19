@@ -7,8 +7,8 @@
 - Rust workspace：edition 2021，resolver 3，根配置在 `Cargo.toml`。
 - 推理运行时：`ort` / ONNX Runtime，Windows 可走 CUDA 或 DirectML，失败后落回 CPU。
 - 图像处理：OpenCV、`image`、`ndarray`、`imageproc`、自定义 `interface-image`。
-- 异步与服务：`tokio`、`actix-web`、`actix-files`、`actix-multipart`。
-- 桌面 UI：WebView2 + `wry` / `tao`，备用界面是 `egui`。
+- 异步运行：`tokio`。
+- 桌面 UI：WebView2 + `wry` / `tao`。
 - 配置与 schema：`serde`、`schemars`、`config`。
 - 文本排版：PNG 渲染使用 `cosmic-text`、`tiny-skia`、`ab_glyph` 等。
 - Python 侧：FastAPI + React/Vite 前端是上游/参考线，Rust runtime 不依赖 Python 后端。
@@ -25,12 +25,10 @@
 
 ## 主要入口
 
-- CLI/API/GUI 命令入口：`crates/runtimes/simple-runtime/src/main.rs`
+- CLI/WebView GUI 命令入口：`crates/runtimes/simple-runtime/src/main.rs`
 - 命令定义：`crates/runtimes/simple-runtime/src/cli.rs`
 - WebView GUI：`crates/runtimes/simple-runtime/src/webview_ui.rs`
 - WebView 静态资源：`crates/runtimes/simple-runtime/webview/`
-- 原生 egui 备用界面：`crates/runtimes/simple-runtime/src/ui/`
-- Actix API：`crates/runtimes/simple-runtime/src/api.rs`
 - 执行流水线：`crates/runtimes/simple-runtime/src/execute/`
 - 配置结构：`crates/runtimes/simple-runtime/src/settings/`
 - 模型注册：`crates/runtimes/simple-runtime/src/setup/`

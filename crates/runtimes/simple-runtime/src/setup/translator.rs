@@ -55,7 +55,7 @@ pub fn create_baidu_translator() -> Option<TranslatorType> {
 
     match (&app_id, &secret_key) {
         (Some(app_id), Some(secret_key)) => {
-            Some(Arc::new(BaiduTranslator::new(&app_id, &secret_key)) as TranslatorType)
+            Some(Arc::new(BaiduTranslator::new(app_id, secret_key)) as TranslatorType)
         }
         _ => {
             if app_id.is_none() {
@@ -125,7 +125,7 @@ pub fn create_youdao_translator() -> Option<TranslatorType> {
 impl Translators {
     pub async fn get(&self, translator: Translator, cuda: bool) -> anyhow::Result<TranslatorType> {
         let mut guard = self.0.lock().await;
-        if !guard.contains_key(&translator) {
+        if guard.get(&translator).is_none() {
             info!("Lazy initializing translator: {translator:?}");
             if let Some(item) = create_translator(translator, cuda).await {
                 guard.insert(translator, item);
