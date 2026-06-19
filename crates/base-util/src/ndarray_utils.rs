@@ -9,12 +9,12 @@ where
     arr.as_standard_layout().to_owned()
 }
 
-pub fn to_contiguous2<'a, T: Clone, D>(arr: Array<T, D>) -> Array<T, D>
+pub fn to_contiguous2<T: Clone, D>(arr: Array<T, D>) -> Array<T, D>
 where
     D: Dimension,
 {
     if arr.is_standard_layout() {
-        return arr;
+        arr
     } else {
         arr.as_standard_layout().to_owned()
     }

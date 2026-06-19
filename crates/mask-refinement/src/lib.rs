@@ -1,8 +1,16 @@
+#![allow(
+    clippy::manual_range_contains,
+    clippy::needless_bool,
+    clippy::needless_borrow,
+    clippy::too_many_arguments,
+    clippy::unnecessary_cast
+)]
+
 mod bubble;
 mod expand;
 mod fill_text;
 
-use std::{borrow::Cow, i32, sync::Arc};
+use std::{borrow::Cow, sync::Arc};
 
 use interface_detector::textlines::{BBox, MyPoint, Quadrilateral};
 use interface_image::{ImageOp, Mask, RawImage};

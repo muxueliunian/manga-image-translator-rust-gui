@@ -72,12 +72,12 @@ pub fn lama_add_border(
     let w = image.width;
     let h = image.height;
     let pad_size = 8;
-    let new_h = if h % pad_size != 0 {
+    let new_h = if !h.is_multiple_of(pad_size) {
         (pad_size - (h % pad_size)) + h
     } else {
         h
     };
-    let new_w = if w % pad_size != 0 {
+    let new_w = if !w.is_multiple_of(pad_size) {
         (pad_size - (w % pad_size)) + w
     } else {
         w

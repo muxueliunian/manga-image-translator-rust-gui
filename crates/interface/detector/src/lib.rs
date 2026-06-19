@@ -80,7 +80,7 @@ pub trait Detector: Model {
 
         if pp_opt.auto_rotate {
             let rerun = if !textlines.is_empty() {
-                textlines.len() * 2 >= textlines.iter().map(|v| v.aspect_ratio() > 1.0).count()
+                textlines.len() * 2 >= textlines.iter().filter(|v| v.aspect_ratio() > 1.0).count()
             } else {
                 true
             };

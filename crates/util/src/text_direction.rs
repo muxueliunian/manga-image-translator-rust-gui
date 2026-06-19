@@ -53,16 +53,8 @@ pub fn generate_text_direction(
         graph.add_node(bbox);
     }
     for ((u, ubox), (v, vbox)) in bboxes.iter().enumerate().tuple_combinations() {
-        if quadrilateral_can_merge_region(
-            &*ubox.lock(),
-            &*vbox.lock(),
-            1.9,
-            2.0,
-            0.6,
-            1.5,
-            1.5,
-            1.0,
-        ) {
+        if quadrilateral_can_merge_region(&ubox.lock(), &vbox.lock(), 1.9, 2.0, 0.6, 1.5, 1.5, 1.0)
+        {
             graph.add_edge((u as u32).into(), (v as u32).into(), ());
         }
     }
@@ -117,7 +109,7 @@ pub fn quadrilateral_can_merge_region(
     let char_size = a.font_size().min(b.font_size());
     let (x1, y1, w1, h1) = (b1.x, b1.y, b1.w, b1.h);
     let (x2, y2, w2, h2) = (b2.x, b2.y, b2.w, b2.h);
-    let dist = a.poly_distance(&b);
+    let dist = a.poly_distance(b);
     if dist > discard_connection_gap * char_size {
         return false;
     }

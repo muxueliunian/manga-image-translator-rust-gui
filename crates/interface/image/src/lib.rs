@@ -198,6 +198,7 @@ impl<'a> RawImageView<'a> {
         }
     }
 
+    #[allow(clippy::should_implement_trait)]
     pub fn clone(&self) -> RawImage {
         RawImage {
             data: self.data.to_vec(),
@@ -206,15 +207,6 @@ impl<'a> RawImageView<'a> {
             channels: self.channels,
         }
     }
-}
-
-fn blend_pixel3(s_rgb: [u8; 3], o_rgba: [u8; 4]) -> [u8; 3] {
-    let alpha = o_rgba[3] as f32 / 255.0;
-    [
-        ((o_rgba[0] as f32 * alpha) + (s_rgb[0] as f32 * (1.0 - alpha))).round() as u8,
-        ((o_rgba[1] as f32 * alpha) + (s_rgb[1] as f32 * (1.0 - alpha))).round() as u8,
-        ((o_rgba[2] as f32 * alpha) + (s_rgb[2] as f32 * (1.0 - alpha))).round() as u8,
-    ]
 }
 
 fn blend_pixel4(s_rgba: [u8; 4], o_rgba: [u8; 4]) -> [u8; 4] {
@@ -253,6 +245,10 @@ impl RawImage {
         self
     }
 
+    /// # Safety
+    ///
+    /// The caller must ensure `(x, y)` is within image bounds and that the image has
+    /// at least four channels.
     pub unsafe fn set_rgba_pixel(&mut self, x: u16, y: u16, rgba: [u8; 4]) {
         let idx = (y as usize * self.width as usize + x as usize) * self.channels as usize;
         let ptr = self.data.as_mut_ptr().add(idx);
@@ -263,6 +259,10 @@ impl RawImage {
         *ptr.add(3) = rgba[3];
     }
 
+    /// # Safety
+    ///
+    /// The caller must ensure `(x, y)` is within image bounds and that the image has
+    /// at least three channels.
     pub unsafe fn set_rgb_pixel(&mut self, x: u16, y: u16, rgb: [u8; 3]) {
         let idx = (y as usize * self.width as usize + x as usize) * self.channels as usize;
         let ptr = self.data.as_mut_ptr().add(idx);
@@ -282,7 +282,7 @@ impl RawImage {
         assert!(y + patch.height <= self.height);
         assert!(self.channels >= 3);
 
-        let use_rgba = self.channels % 2 == 0;
+        let use_rgba = self.channels.is_multiple_of(2);
 
         for j in 0..patch.height {
             for i in 0..patch.width {
@@ -349,10 +349,10 @@ impl RawImage {
         if self.channels == 1 {
             let b = self.width as usize * y as usize + x as usize;
             let b = self.data[b];
-            return [b, b, b];
+            [b, b, b]
         } else if self.channels == 3 {
             let b = (self.width as usize * y as usize + x as usize) * 3;
-            return [self.data[b], self.data[b + 1], self.data[b + 2]];
+            [self.data[b], self.data[b + 1], self.data[b + 2]]
         } else {
             unimplemented!("not valid shape")
         }
@@ -362,23 +362,23 @@ impl RawImage {
         if self.channels == 1 {
             let b = self.width as usize * y as usize + x as usize;
             let b = self.data[b];
-            return [b, b, b, 255];
+            [b, b, b, 255]
         } else if self.channels == 2 {
             let b = (self.width as usize * y as usize + x as usize) * 2;
             let c = self.data[b];
             let a = self.data[b + 1];
-            return [c, c, c, a];
+            [c, c, c, a]
         } else if self.channels == 3 {
             let b = (self.width as usize * y as usize + x as usize) * 3;
-            return [self.data[b], self.data[b + 1], self.data[b + 2], 255];
+            [self.data[b], self.data[b + 1], self.data[b + 2], 255]
         } else if self.channels == 4 {
             let b = (self.width as usize * y as usize + x as usize) * 4;
-            return [
+            [
                 self.data[b],
                 self.data[b + 1],
                 self.data[b + 2],
                 self.data[b + 3],
-            ];
+            ]
         } else {
             unimplemented!("not valid shape")
         }
@@ -474,7 +474,7 @@ impl<'a> MaskView<'a> {
     pub fn as_nd(&self) -> anyhow::Result<ArrayView2<'_, u8>> {
         Ok(ArrayView2::from_shape(
             (self.height as usize, self.width as usize),
-            &self.data,
+            self.data,
         )?)
     }
     pub fn as_opencv_mat(&self) -> Result<BoxedRef<'a, Mat>, opencv::Error> {
@@ -717,8 +717,8 @@ pub enum Interpolation {
 pub fn generate_patches_m(img: RawImageView, patch_size: usize, margin: usize) -> Vec<RawImage> {
     let p = margin;
     let total_size = patch_size + 2 * p;
-    let n_x = (img.width as usize + patch_size - 1) / patch_size;
-    let n_y = (img.height as usize + patch_size - 1) / patch_size;
+    let n_x = (img.width as usize).div_ceil(patch_size);
+    let n_y = (img.height as usize).div_ceil(patch_size);
     let mut patches = Vec::with_capacity(n_x * n_y);
 
     for i in 0..n_y {
@@ -788,7 +788,7 @@ pub fn combine_patches_m(
     let total_size = patch_size + 2 * p;
     let width_usize = width as usize;
     let height_usize = height as usize;
-    let n_x = (width_usize + patch_size - 1) / patch_size;
+    let n_x = width_usize.div_ceil(patch_size);
     let mut output_data = vec![0; width_usize * height_usize * 3];
 
     for (idx, patch) in patches.iter().enumerate() {

@@ -46,9 +46,8 @@ impl ImageOp for RayonImageProcessor {
         let width = width.max(old_w);
         let height = height.max(old_h);
 
-        let channels_usize = channels as usize;
-        let mut new_data = Vec::with_capacity(width as usize * height as usize * channels_usize);
-        new_data.resize(new_data.capacity(), 0);
+        let channels_usize = channels;
+        let mut new_data = vec![0; width as usize * height as usize * channels_usize];
 
         new_data
             .par_chunks_mut(width as usize * channels_usize)
@@ -85,8 +84,7 @@ impl ImageOp for RayonImageProcessor {
 
         let new_side_usize = new_side as usize;
         let channels_usize = channels as usize;
-        let mut new_data = Vec::with_capacity(new_side_usize * new_side_usize * channels_usize);
-        new_data.resize(new_data.capacity(), 0);
+        let mut new_data = vec![0; new_side_usize * new_side_usize * channels_usize];
 
         new_data
             .par_chunks_mut(new_side_usize * channels_usize)
@@ -125,8 +123,7 @@ impl ImageOp for RayonImageProcessor {
         let offset_y = (height - old_h) / 2;
 
         let channels_usize = channels as usize;
-        let mut new_data = Vec::with_capacity(width as usize * height as usize * channels_usize);
-        new_data.resize(new_data.capacity(), 0);
+        let mut new_data = vec![0; width as usize * height as usize * channels_usize];
 
         new_data
             .par_chunks_mut(width as usize * channels_usize)
@@ -158,8 +155,7 @@ impl ImageOp for RayonImageProcessor {
         let new_w = width as usize;
         let new_h = height as usize;
 
-        let mut new_data = Vec::with_capacity(new_w * new_h * channels);
-        new_data.resize(new_data.capacity(), 0);
+        let mut new_data = vec![0; new_w * new_h * channels];
 
         new_data
             .par_chunks_mut(new_w * channels)
@@ -193,8 +189,7 @@ impl ImageOp for RayonImageProcessor {
         let offset_x = (old_w - new_w) / 2;
         let offset_y = (old_h - new_h) / 2;
 
-        let mut new_data = Vec::with_capacity(new_w * new_h * channels);
-        new_data.resize(new_data.capacity(), 0);
+        let mut new_data = vec![0; new_w * new_h * channels];
 
         new_data
             .par_chunks_mut(new_w * channels)
@@ -224,8 +219,7 @@ impl ImageOp for RayonImageProcessor {
         let width_u = width as usize;
         let height_u = height as usize;
 
-        let mut rotated_data: Vec<u8> = Vec::with_capacity(width_u * height_u * channels_u);
-        unsafe { rotated_data.set_len(rotated_data.capacity()) };
+        let mut rotated_data: Vec<u8> = vec![0; width_u * height_u * channels_u];
 
         rotated_data
             .par_chunks_mut(height_u * channels_u)
@@ -266,8 +260,7 @@ impl ImageOp for RayonImageProcessor {
         let width_u = width as usize;
         let height_u = height as usize;
 
-        let mut rotated_data: Vec<u8> = Vec::with_capacity(width_u * height_u * channels_u);
-        unsafe { rotated_data.set_len(rotated_data.capacity()) };
+        let mut rotated_data: Vec<u8> = vec![0; width_u * height_u * channels_u];
 
         rotated_data
             .par_chunks_mut(height_u * channels_u)
@@ -321,7 +314,7 @@ impl ImageOp for RayonImageProcessor {
             .map(|val| {
                 let normalized = (val as f64) / 255.0;
                 let corrected = 255.0 * normalized.powf(gamma);
-                corrected.max(0.0).min(255.0).round() as u8
+                corrected.clamp(0.0, 255.0).round() as u8
             })
             .collect();
 
@@ -341,20 +334,16 @@ impl ImageOp for RayonImageProcessor {
 
     fn histogram_equalization(&self, image: super::RawImage) -> super::RawImage {
         assert_eq!(image.channels, 3);
-        let mut output = Vec::with_capacity(image.data.len());
-        unsafe { output.set_len(output.capacity()) };
+        let mut output = vec![0; image.data.len()];
 
         let size = image.width as u32 * image.height as u32;
 
         // Step 1: Convert RGB to YUV and extract Y channel
-        let mut y_channel = Vec::with_capacity(size as usize);
-        unsafe { y_channel.set_len(y_channel.capacity()) };
+        let mut y_channel = vec![0; size as usize];
 
-        let mut u_channel = Vec::with_capacity(size as usize);
-        unsafe { u_channel.set_len(u_channel.capacity()) };
+        let mut u_channel = vec![0; size as usize];
 
-        let mut v_channel = Vec::with_capacity(size as usize);
-        unsafe { v_channel.set_len(v_channel.capacity()) };
+        let mut v_channel = vec![0; size as usize];
         let mut hist = [0u32; 256];
 
         image
@@ -399,13 +388,13 @@ impl ImageOp for RayonImageProcessor {
             }
         }
 
-        let total_pixels = size as u32;
+        let total_pixels = size;
         let scale = 255.0 / (total_pixels - cdf_min).max(1) as f32;
 
         let mut lut = [0u8; 256];
         for i in 0..256 {
             let cdf_value = cdf[i];
-            lut[i] = (((cdf_value - cdf_min).max(0) as f32 * scale)
+            lut[i] = ((cdf_value.saturating_sub(cdf_min) as f32 * scale)
                 .round()
                 .clamp(0.0, 255.0)) as u8;
         }

@@ -21,7 +21,7 @@ fn square_pad_resize<'a>(
         pad_h = w - h;
         h += pad_h;
     }
-    let pad_size = tgt_size as isize - h as isize;
+    let pad_size = tgt_size as isize - h;
     if pad_size > 0 {
         pad_h += pad_size;
         pad_w += pad_size;
@@ -118,7 +118,7 @@ fn patch2batches(
     let mut down_scale_ratio_ = None;
     let mut pad_size_ = None;
 
-    for (_, patch) in patch_lst.outer_iter().enumerate() {
+    for patch in patch_lst.outer_iter() {
         if batches.last().map(|v| v.len()).unwrap_or_default() >= max_batch_size {
             batches.push(vec![]);
         }
@@ -301,8 +301,7 @@ pub fn det_rearrange_forward(
         .map(|batch| {
             let batch_arrays: Result<Vec<_>, ShapeError> =
                 batch.iter().map(|v| v.as_ndarray()).collect();
-            let batch_array4 = vec_array3_to_array4(batch_arrays?);
-            batch_array4
+            vec_array3_to_array4(batch_arrays?)
         })
         .collect();
 
@@ -409,7 +408,7 @@ fn unrearrange(
     pw_num: usize,
     ph_step: usize,
     patch_size: usize,
-    rel_step_list: &Vec<f64>,
+    rel_step_list: &[f64],
 ) -> anyhow::Result<Array4<f32>> {
     let h = *patch_lst[0]
         .shape()

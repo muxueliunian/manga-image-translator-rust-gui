@@ -443,8 +443,8 @@ fn alpha_composite_pixel(base: &mut RawImage, x: usize, y: usize, rgba: [u8; 4])
     }
     let idx = (y * base.width as usize + x) * base.channels as usize;
     let alpha = rgba[3] as f32 / 255.0;
-    for channel in 0..3 {
-        base.data[idx + channel] = ((rgba[channel] as f32 * alpha)
+    for (channel, value) in rgba.iter().enumerate().take(3) {
+        base.data[idx + channel] = ((*value as f32 * alpha)
             + (base.data[idx + channel] as f32 * (1.0 - alpha)))
             .round() as u8;
     }
@@ -554,7 +554,7 @@ impl PngRenderer {
             return self.create_vertical_buffer(text, color_map);
         }
 
-        let metrics = to_metrics(&text);
+        let metrics = to_metrics(text);
         let mut buffer_ = Buffer::new(&mut self.font_system, metrics);
         let mut buffer = buffer_.borrow_with(&mut self.font_system);
         buffer.set_size(Some(text.size.0 as f32), Some(text.size.1 as f32));
@@ -623,8 +623,8 @@ impl PngRenderer {
         let w = text.size.0.max(1);
         let h = text.size.1.max(1);
 
-        let mut rgb = vec![[0_u8; 4]; h as usize * w as usize];
-        let mut bg = vec![0_u8; h as usize * w as usize];
+        let mut rgb = vec![[0_u8; 4]; h * w];
+        let mut bg = vec![0_u8; h * w];
         for run in layouts {
             for glyph in run.glyphs.iter() {
                 let physical_glyph = glyph.physical((0., 0.), 1.0);
@@ -699,7 +699,11 @@ impl PngRenderer {
             wh(&layouts)
         };
         let mut low = 0.0;
-        let mut high = 1.0_f32.min(max_size.max(1.0));
+        let mut high = if max_size <= 1.0 {
+            max_size.max(0.0)
+        } else {
+            1.0
+        };
         while {
             let (w, h) = measure(high);
             w <= target_size.0 && h <= target_size.1 && high < max_size

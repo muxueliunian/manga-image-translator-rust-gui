@@ -111,13 +111,13 @@ impl Quadrilateral {
             }
 
             if pattern == "h_left" {
-                return self.pts[0].dist(&other.pts[0]);
+                self.pts[0].dist(&other.pts[0])
             } else if pattern == "h_right" {
-                return self.pts[1].dist(&other.pts[1]);
+                self.pts[1].dist(&other.pts[1])
             } else {
                 let sestr = self.structure();
                 let otstr = other.structure();
-                return sestr[0].dist(&otstr[0]);
+                sestr[0].dist(&otstr[0])
             }
         } else {
             let poly1 = MultiPoint::from(vec![
@@ -143,9 +143,9 @@ impl Quadrilateral {
                 pattern = "v_bottom"
             }
             if pattern == "v_top" {
-                return self.pts[0].dist(&other.pts[0]);
+                self.pts[0].dist(&other.pts[0])
             } else {
-                return self.pts[2].dist(&other.pts[2]);
+                self.pts[2].dist(&other.pts[2])
             }
         }
     }
@@ -280,8 +280,8 @@ fn sort_pnts(pts: [(i64, i64); 4]) -> ([MyPoint; 4], bool) {
 
     let mut indices: [usize; 16] = {
         let mut tmp = [0; 16];
-        for i in 0..16 {
-            tmp[i] = i;
+        for (i, item) in tmp.iter_mut().enumerate() {
+            *item = i;
         }
         tmp
     };
@@ -397,7 +397,7 @@ impl MyPoint<f64> {
         f64::sqrt((self.x - other.x).powi(2) + (self.y - other.y).powi(2))
     }
     fn euclidean_norm(&self) -> f64 {
-        ((self.x.powi(2) + self.y.powi(2)) as f64).sqrt()
+        (self.x.powi(2) + self.y.powi(2)).sqrt()
     }
 
     pub fn norm(self) -> f64 {

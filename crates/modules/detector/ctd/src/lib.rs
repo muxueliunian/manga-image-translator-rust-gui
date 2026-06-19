@@ -1,3 +1,13 @@
+#![allow(
+    clippy::assign_op_pattern,
+    clippy::needless_borrow,
+    clippy::needless_return,
+    clippy::neg_multiply,
+    clippy::too_many_arguments,
+    clippy::type_complexity,
+    clippy::unnecessary_cast
+)]
+
 mod refine_mask;
 
 use std::{ops::Deref, sync::Arc};

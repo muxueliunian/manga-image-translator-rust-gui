@@ -71,9 +71,7 @@ impl ImageOp for DummyImageProcessor {
     }
 
     fn rotate_right(&self, mut image: super::RawImageView) -> super::RawImage {
-        let temp = image.height;
-        image.height = image.width;
-        image.width = temp;
+        std::mem::swap(&mut image.height, &mut image.width);
         RawImage {
             data: vec![0; image.data.len()],
             width: image.width,
@@ -83,16 +81,12 @@ impl ImageOp for DummyImageProcessor {
     }
 
     fn rotate_left(&self, mut image: super::RawImage) -> super::RawImage {
-        let temp = image.height;
-        image.height = image.width;
-        image.width = temp;
+        std::mem::swap(&mut image.height, &mut image.width);
         image
     }
 
     fn rotate_left_mask(&self, mut mask: Mask) -> Mask {
-        let temp = mask.height;
-        mask.height = mask.width;
-        mask.width = temp;
+        std::mem::swap(&mut mask.height, &mut mask.width);
         mask
     }
 
