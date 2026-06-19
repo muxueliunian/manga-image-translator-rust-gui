@@ -21,6 +21,8 @@ const i18n = {
     outputGroup: "输出",
     runtimeGroup: "运行",
     outputDir: "导出目录",
+    outputDirUnset: "未设置（导出时选择）",
+    outputDirHint: "选择导出目录（翻译结果导出到此）",
     outputFormat: "输出格式",
     textDirection: "文字方向",
     requireCuda: "强制 CUDA",
@@ -217,6 +219,8 @@ const i18n = {
     outputGroup: "Output",
     runtimeGroup: "Runtime",
     outputDir: "Export Directory",
+    outputDirUnset: "Not set (chosen on export)",
+    outputDirHint: "Choose export directory (translated results export here)",
     outputFormat: "Output Format",
     textDirection: "Text Direction",
     requireCuda: "Require CUDA, no CPU fallback",
@@ -427,6 +431,7 @@ const FILMSTRIP_WIDTH_MIN = 160;
 const FILMSTRIP_WIDTH_MAX = 520;
 const RESULTS_HEIGHT_KEY = "mitResultsHeight";
 const RESULTS_HEIGHT_MIN = 96;
+const OUTPUT_DIR_KEY = "mitOutputDir";
 
 const ICON_CHEVRON =
   '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6" /></svg>';
@@ -468,7 +473,8 @@ const els = {
   pickFolder: document.getElementById("pickFolder"),
   clearInputs: document.getElementById("clearInputs"),
   pickOutputDir: document.getElementById("pickOutputDir"),
-  outputDir: document.getElementById("outputDir"),
+  outputDirLabel: document.getElementById("outputDirLabel"),
+  outputDirReadout: document.getElementById("outputDirReadout"),
   outputFormat: document.getElementById("outputFormat"),
   textDirection: document.getElementById("textDirection"),
   providerStatus: document.getElementById("providerStatus"),
@@ -1373,16 +1379,31 @@ async function chooseFolder() {
   }
 }
 
+function outputDirBaseName(dir) {
+  return dir ? String(dir).split(/[\\/]/).filter(Boolean).pop() || dir : "";
+}
+
+// Reflect the chosen output dir in the toolbar button + inspector readout, and
+// (optionally) persist it so the next launch remembers it.
+function applyOutputDir(dir, persist = true) {
+  state.outputDir = dir || "";
+  els.outputDirLabel.textContent = outputDirBaseName(state.outputDir) || t("outputDir");
+  els.pickOutputDir.title = state.outputDir || t("outputDirHint");
+  els.pickOutputDir.classList.toggle("is-set", Boolean(state.outputDir));
+  if (els.outputDirReadout) {
+    els.outputDirReadout.textContent = state.outputDir || t("outputDirUnset");
+  }
+  if (persist) localStorage.setItem(OUTPUT_DIR_KEY, state.outputDir);
+}
+
 async function chooseOutputDir() {
   try {
-    setStatus(t("starting"), t("openingOutput"));
     const data = await invoke("pickOutputDir");
-    state.outputDir = (data.paths || [])[0] || "";
-    els.outputDir.value = state.outputDir;
-    if (state.outputDir) {
-      setStatus(t("outputSelected"), truncateMiddle(state.outputDir, 72));
-      addLog("info", `${t("outputSelected")}: ${state.outputDir}`);
-    }
+    const dir = (data.paths || [])[0] || "";
+    if (!dir) return;
+    applyOutputDir(dir);
+    setStatus(t("outputSelected"), truncateMiddle(dir, 72));
+    addLog("info", `${t("outputSelected")}: ${dir}`);
   } catch (err) {
     addLog("error", err.message);
   }
@@ -1945,15 +1966,24 @@ async function exportSelectedResults() {
     addLog("error", t("exportNeedSelection"));
     return;
   }
-  if (!state.outputDir) {
-    setStatus(t("exportNeedDir"), "");
-    addLog("error", t("exportNeedDir"));
-    return;
+  // Translation stays in a temp dir; "Export selected" saves the chosen results
+  // to the persisted export directory — picking + remembering one if unset.
+  let exportDir = state.outputDir;
+  if (!exportDir) {
+    try {
+      const picked = await invoke("pickOutputDir");
+      exportDir = (picked.paths || [])[0] || "";
+    } catch (err) {
+      addLog("error", err.message);
+      return;
+    }
+    if (!exportDir) return;
+    applyOutputDir(exportDir);
   }
   try {
     const data = await invoke("exportResults", {
       outputs,
-      export_dir: state.outputDir,
+      export_dir: exportDir,
     });
     const count = Array.isArray(data.exported) ? data.exported.length : 0;
     setStatus(t("exported"), `${count} ${t("selected")}`);
@@ -2292,12 +2322,67 @@ async function setAutoDownload(value) {
   }
 }
 
+// Smoothly animate the inspector accordions. Native <details> toggles instantly,
+// which both looks abrupt and triggers a WebView2 repaint glitch (stale tiles)
+// when several groups are open; animating the height forces continuous repaints.
+function initAccordions() {
+  const reduceMotion = () =>
+    window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  document.querySelectorAll("details.acc").forEach((det) => {
+    const summary = det.querySelector("summary.acc-head");
+    const body = det.querySelector(".acc-body");
+    if (!summary || !body) return;
+    let anim = null;
+    summary.addEventListener("click", (event) => {
+      event.preventDefault();
+      if (anim) {
+        anim.cancel();
+        anim = null;
+      }
+      if (reduceMotion()) {
+        det.open = !det.open;
+        return;
+      }
+      if (det.open) {
+        const start = body.offsetHeight;
+        anim = body.animate(
+          [
+            { height: `${start}px`, opacity: 1 },
+            { height: "0px", opacity: 0 },
+          ],
+          { duration: 170, easing: "ease", fill: "forwards" },
+        );
+        anim.onfinish = () => {
+          det.open = false;
+          if (anim) anim.cancel();
+          anim = null;
+        };
+      } else {
+        det.open = true;
+        const end = body.offsetHeight;
+        anim = body.animate(
+          [
+            { height: "0px", opacity: 0 },
+            { height: `${end}px`, opacity: 1 },
+          ],
+          { duration: 170, easing: "ease" },
+        );
+        anim.onfinish = () => {
+          anim = null;
+        };
+      }
+    });
+  });
+}
+
 async function bootstrap() {
   applyTheme(state.theme);
   applyLang();
   initPreviewResizer();
   initFilmstripResizer();
   initResultsResizer();
+  initAccordions();
+  applyOutputDir(localStorage.getItem(OUTPUT_DIR_KEY) || "", false);
   renderTree();
   renderLogEmptyState();
 
@@ -2305,8 +2390,9 @@ async function bootstrap() {
     state.lang = state.lang === "zh" ? "en" : "zh";
     localStorage.setItem("mitWebviewLang", state.lang);
     applyLang();
-    // applyLang reset the toggle to its data-i18n default; restore collapse label.
+    // applyLang reset elements to their data-i18n defaults; restore dynamic labels.
     setPreviewCollapsed(els.canvas.classList.contains("preview-collapsed"));
+    applyOutputDir(state.outputDir, false);
   });
   els.togglePreview.addEventListener("click", () => {
     setPreviewCollapsed(!els.canvas.classList.contains("preview-collapsed"));
