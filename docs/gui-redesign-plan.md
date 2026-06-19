@@ -181,9 +181,16 @@ B 已完成(见下「B/UX 一轮实现记录」)。剩余:**C 下载完整性校
 - **B 终端流式 debug ✅ 已完成**(见上)。
 - **C 下载完整性校验**:除 dbnet/ctd/paddle 外,多数模块 `models()` 的 `hash="###"` → `failure()` 直接判就绪、**不校验**。半截/损坏下载不被发现。至少加大小/非空校验,或补真实 hash。
 - **A P5 叠加层(二期)**:画布叠检测框+译文 SVG。需 `process_one` 渲染前从 `Export` 抽轻量 DTO(`RegionOverlay{quad,angle,src,dst,fg,bg}`/`ImageOverlay`)经 `ReadImage` 同类通道回传;最大风险=upscaler/rotate 改变坐标基准致错位(见「风险点」)。
-- **D 工程卫生**:清 12 条编译告警(未用 import、`cache.rs::save_mask` 未处理的 `Result`)、CI 接 `cargo clippy`、评估清理 `src/ui/`(旧 egui 界面,疑被 WebView 取代的死代码)、补 M1b 单测。
+- **D 工程卫生(删 UI 部分 ✅,Codex 完成 2026-06-20)**:见下「D 实现记录」。剩余未做:CI 接 `cargo clippy`、补 M1b 单测;以及**全工作区 clippy 改动的逐文件复核**(commit `46b986c` 共 34 文件,目前仅抽查高风险项)。
 - **E 下载体验**:取消进行中下载、失败重试入口、并行下载(现串行)。锦上添花。
 - **M1c(可选)**:Cargo `[patch]` 统一 git 0.11.0 interface-model → 本地翻译器模型(Sugoi/NLLB 等)也听配置根。
+
+### D 实现记录(2026-06-20,Codex 执行 + 本会话 review)
+**目标**:fork 只主推 WebView GUI,删 egui / 旧 web UI 死代码 + 卫生。任务由主 agent 写 prompt、派 Codex 在本机执行。两个 commit:
+- `2eeaf57 refactor: remove legacy desktop and web UI`:删 `src/ui/`(egui)、`src/api.rs` + `web/`(actix + 旧 React)、`Commands::Ui`/`Api`、`src/cache.rs`(确认无引用);Cargo 删 `egui`/`eframe`/`actix-*`(根 + 成员);打包脚本删失效 `run-egui.bat`/`run-webui.bat`;`DEVELOPMENT_GUIDE.md` 同步。**保留** `Cli`/`UiWebview`、`rfd`/`tao`/`wry`/`reqwest`。
+- `46b986c chore: clean build and clippy warnings`:**全工作区** clippy/告警清零(34 文件,含 `interface/image`、`renderer/png`、`mask-refinement`、`util`、`detector` 等核心 crate)——**超出了 prompt 的 `-p simple-runtime` 范围**。
+**Review 结论(本会话,抽查高风险项)**:核心删除正确完整;**GUI/M1b(`webview_ui.rs`/`webview/`/`models_catalog.rs`)一行未动**;`cargo build`/`clippy -D warnings`/`build --release --features cuda` 三项均过。抽查的 clippy 改动行为等价,且**顺带修了 2 处真问题**:`cpu.rs` 的 `Vec::with_capacity+unsafe set_len`(读未初始化内存 UB)→ `vec![0;n]`;直方图均衡里 u32 可能下溢的 `-` → `saturating_sub`。`base-util default-features=false` 为 no-op(`default=[]`)。唯一非纯等价:`png` 字号搜索 `high` 初值在 `max_size≤1.0` 边角不同(常规字号一致,可忽略)。
+**待办**:① 逐文件复核 `46b986c` 全部 34 文件(目前仅抽查);② 范围决策——若想 fork 历史只聚焦"删 UI",可单独 `git revert 46b986c`(独立 commit,不影响删除);③ CI 接 clippy、补 M1b 单测(未做)。
 
 ### P3d 实现记录(2026-06-19 完成)
 - 左栏拆**两段**:上=输入树,下=「已完成翻译」(本次运行结果,关程序即清空)。结果行紧凑
