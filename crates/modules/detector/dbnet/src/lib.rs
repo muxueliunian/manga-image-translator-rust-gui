@@ -25,7 +25,7 @@ pub struct DbNetDetector {
     providers: Arc<Vec<Providers>>,
     model: ModelWrap<AsyncSessionPool>,
     /// Different model architecture, but based on dbnet
-    convnext: bool,
+    _convnext: bool,
 }
 
 impl DbNetDetector {
@@ -34,7 +34,7 @@ impl DbNetDetector {
         DbNetDetector {
             providers,
             model: Default::default(),
-            convnext,
+            _convnext: convnext,
         }
     }
 }
@@ -223,8 +223,12 @@ fn filter_boxes_and_adjust(boxes: &Array3<i64>, ratio_w: f64, ratio_h: f64) -> A
         return Array3::<i64>::zeros((0, 0, 0));
     }
     let boxes = boxes.to_shared();
+    let box_count = boxes.shape()[0];
+    let values_per_box = boxes.len() / box_count;
     let idx = boxes
-        .reshape((boxes.shape()[0], boxes.len() / boxes.shape()[0]))
+        .view()
+        .into_shape_with_order((box_count, values_per_box))
+        .expect("box shape is derived from the original dimensions")
         .sum_axis(Axis(1))
         .mapv(|v| v > 0);
     let indicies = idx

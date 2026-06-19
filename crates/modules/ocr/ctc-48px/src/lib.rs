@@ -1,3 +1,11 @@
+#![allow(
+    clippy::assign_op_pattern,
+    clippy::borrow_deref_ref,
+    clippy::ptr_arg,
+    clippy::type_complexity,
+    clippy::unnecessary_cast
+)]
+
 mod decode;
 
 use std::{fs::read_to_string, ops::Deref as _, sync::Arc};

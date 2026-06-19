@@ -118,7 +118,7 @@ impl Detector for PaddleDetector {
         let max_side_len = 960;
         let origin_max_side = img.width.max(img.height);
 
-        let resize = if max_side_len <= 0 || max_side_len > origin_max_side {
+        let resize = if max_side_len == 0 || max_side_len > origin_max_side {
             origin_max_side
         } else {
             max_side_len

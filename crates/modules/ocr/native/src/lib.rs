@@ -1,3 +1,5 @@
+#![allow(clippy::into_iter_on_ref)]
+
 use std::{collections::HashMap, ops::Deref, sync::Arc};
 
 use image::GenericImageView as _;

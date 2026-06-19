@@ -1,3 +1,5 @@
+#![allow(clippy::iter_kv_map)]
+
 use std::{fmt::Display, sync::Arc};
 
 use base_util::onnx::{new_session, Providers};

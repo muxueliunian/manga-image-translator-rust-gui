@@ -22,14 +22,12 @@ pub fn to_continous2(value: &Mat) -> Cow<'_, Mat> {
 
 pub fn to_continuous_inplace(s: &mut Mat) -> *const u8 {
     if s.is_continuous() {
-        let data_ptr = s.data();
-        data_ptr
+        s.data()
     } else {
         // allow:clone[to_contiguous]
         let mut new = s.clone();
         mem::swap(s, &mut new);
-        let data_ptr = s.data();
-        data_ptr
+        s.data()
     }
 }
 

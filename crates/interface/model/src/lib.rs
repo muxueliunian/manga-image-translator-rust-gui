@@ -69,7 +69,7 @@ pub trait Model {
     async fn download_model(&self, key: &str, file: &str) -> anyhow::Result<PathBuf> {
         let models = self.models();
         let model = models.get(key).ok_or(anyhow!("Model not found"))?;
-        ModelDb {}.get(self.kind(), self.name(), file, &model.url, &model.hash)
+        ModelDb {}.get(self.kind(), self.name(), file, model.url, model.hash)
     }
     async fn loaded_(&self) -> bool;
     async fn reload_(&self) -> anyhow::Result<()>;
@@ -120,7 +120,6 @@ macro_rules! impl_model_helpers {
         {
             Box::pin(async move {
                 *self.$model.write().await = None;
-                ()
             })
         }
 

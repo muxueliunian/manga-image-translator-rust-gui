@@ -33,8 +33,7 @@ impl ImageOp for CpuImageProcessor {
         let width = width.max(old_w);
         let height = height.max(old_h);
 
-        let mut new_data = Vec::with_capacity(width as usize * height as usize * channels as usize);
-        new_data.resize(new_data.capacity(), 0);
+        let mut new_data = vec![0; width as usize * height as usize * channels as usize];
 
         for row in 0..old_h {
             let partial = row as u32 * channels;
@@ -76,8 +75,7 @@ impl ImageOp for CpuImageProcessor {
         let pad_y = (new_side - old_h) / 2;
 
         let new_side_usize = new_side as usize;
-        let mut new_data = Vec::with_capacity(new_side_usize * new_side_usize * channels as usize);
-        new_data.resize(new_data.capacity(), 0);
+        let mut new_data = vec![0; new_side_usize * new_side_usize * channels as usize];
 
         for row in 0..old_h {
             let partial = row as u32 * channels;
@@ -120,8 +118,7 @@ impl ImageOp for CpuImageProcessor {
         let pad_x = (width - old_w) / 2;
         let pad_y = (height - old_h) / 2;
 
-        let mut new_data = Vec::with_capacity(width as usize * height as usize * channels as usize);
-        new_data.resize(new_data.capacity(), 0);
+        let mut new_data = vec![0; width as usize * height as usize * channels as usize];
 
         for row in 0..old_h {
             let partial = row as u32 * channels;
@@ -155,8 +152,7 @@ impl ImageOp for CpuImageProcessor {
         let orig_stride = image.width as usize * channels;
         let new_stride = width as usize * channels;
 
-        let mut new_data = Vec::with_capacity(width as usize * height as usize * channels);
-        new_data.resize(new_data.capacity(), 0);
+        let mut new_data = vec![0; width as usize * height as usize * channels];
 
         for row in 0..height as usize {
             let src_offset = row * orig_stride;
@@ -192,8 +188,7 @@ impl ImageOp for CpuImageProcessor {
         let pad_x = (image.width as usize - new_w) / 2;
         let pad_y = (image.height as usize - new_h) / 2;
 
-        let mut new_data = Vec::with_capacity(new_w * new_h * channels as usize);
-        new_data.resize(new_data.capacity(), 0);
+        let mut new_data = vec![0; new_w * new_h * channels as usize];
 
         for row in 0..new_h {
             let src_start = ((row + pad_y) * image.width as usize + pad_x) * channels as usize;
@@ -201,8 +196,8 @@ impl ImageOp for CpuImageProcessor {
 
             unsafe {
                 std::ptr::copy_nonoverlapping(
-                    image.data.as_ptr().add(src_start as usize),
-                    new_data.as_mut_ptr().add(dst_start as usize),
+                    image.data.as_ptr().add(src_start),
+                    new_data.as_mut_ptr().add(dst_start),
                     new_w * channels as usize,
                 );
             }
@@ -227,8 +222,7 @@ impl ImageOp for CpuImageProcessor {
         let width_u = width as usize;
         let height_u = height as usize;
 
-        let mut rotated_data = Vec::with_capacity(width_u * height_u * channels_u);
-        unsafe { rotated_data.set_len(rotated_data.capacity()) };
+        let mut rotated_data = vec![0; width_u * height_u * channels_u];
 
         unsafe {
             let src_ptr = data.as_ptr();
@@ -268,8 +262,7 @@ impl ImageOp for CpuImageProcessor {
         let width_u = width as usize;
         let height_u = height as usize;
 
-        let mut rotated_data = Vec::with_capacity(width_u * height_u * channels_u);
-        unsafe { rotated_data.set_len(rotated_data.capacity()) };
+        let mut rotated_data = vec![0; width_u * height_u * channels_u];
 
         unsafe {
             let src_ptr = data.as_ptr();
@@ -320,7 +313,7 @@ impl ImageOp for CpuImageProcessor {
             .map(|val| {
                 let normalized = (val as f64) / 255.0;
                 let corrected = 255.0 * normalized.powf(gamma);
-                corrected.max(0.0).min(255.0).round() as u8
+                corrected.clamp(0.0, 255.0).round() as u8
             })
             .collect();
 
@@ -340,24 +333,19 @@ impl ImageOp for CpuImageProcessor {
     fn histogram_equalization(&self, image: super::RawImage) -> super::RawImage {
         assert_eq!(image.channels, 3);
 
-        let mut output = Vec::with_capacity(image.data.len());
-        unsafe { output.set_len(output.capacity()) };
+        let mut output = vec![0; image.data.len()];
 
         let size = image.width as u32 * image.height as u32;
 
         // Step 1: Convert RGB to YUV and extract Y channel
-        let mut y_channel = Vec::with_capacity(size as usize);
-        unsafe { y_channel.set_len(y_channel.capacity()) };
+        let mut y_channel = vec![0; size as usize];
 
-        let mut u_channel = Vec::with_capacity(size as usize);
-        unsafe { u_channel.set_len(u_channel.capacity()) };
+        let mut u_channel = vec![0; size as usize];
 
-        let mut v_channel = Vec::with_capacity(size as usize);
-        unsafe { v_channel.set_len(v_channel.capacity()) };
+        let mut v_channel = vec![0; size as usize];
         let mut hist = [0u32; 256];
 
         for (i, chunk) in image.data.chunks_exact(3).enumerate() {
-            let i = i as usize;
             let r = chunk[0] as f32;
             let g = chunk[1] as f32;
             let b = chunk[2] as f32;
@@ -391,13 +379,13 @@ impl ImageOp for CpuImageProcessor {
             }
         }
 
-        let total_pixels = size as u32;
+        let total_pixels = size;
         let scale = 255.0 / (total_pixels - cdf_min).max(1) as f32;
 
         let mut lut = [0u8; 256];
         for i in 0..256 {
             let cdf_value = cdf[i];
-            lut[i] = (((cdf_value - cdf_min).max(0) as f32 * scale)
+            lut[i] = ((cdf_value.saturating_sub(cdf_min) as f32 * scale)
                 .round()
                 .clamp(0.0, 255.0)) as u8;
         }
@@ -405,8 +393,7 @@ impl ImageOp for CpuImageProcessor {
         let equalized_y: Vec<u8> = y_channel.iter().map(|&y| lut[y as usize]).collect();
 
         // Step 3: Convert YUV back to RGB
-        for i in 0..size {
-            let i = i as usize;
+        for i in 0..size as usize {
             let y = equalized_y[i] as f32;
             let u = u_channel[i] as f32 - 128.0;
             let v = v_channel[i] as f32 - 128.0;
@@ -435,7 +422,7 @@ impl ImageOp for CpuImageProcessor {
         height: DimType,
         interpolation: Interpolation,
     ) -> anyhow::Result<super::RawImage> {
-        RayonImageProcessor::default().resize(image, width, height, interpolation)
+        RayonImageProcessor.resize(image, width, height, interpolation)
     }
 
     fn resize_mask(
@@ -445,7 +432,7 @@ impl ImageOp for CpuImageProcessor {
         height: usize,
         interpolation: Interpolation,
     ) -> anyhow::Result<Mask> {
-        RayonImageProcessor::default().resize_mask(image, width, height, interpolation)
+        RayonImageProcessor.resize_mask(image, width, height, interpolation)
     }
 
     fn remove_border_mask(&self, mask: Mask, width: DimType, height: DimType) -> Mask {
@@ -541,8 +528,7 @@ impl ImageOp for CpuImageProcessor {
                         let src_idx = r * cols * channels + c * channels + ch; // HWC index
                         let dst_idx = ch * rows * cols + r * cols + c; // CHW index
                         let value = img_src.data.get_unchecked(src_idx).to_owned();
-                        let data =
-                            value as f32 * norm_vals[ch] - mean_vals[ch as usize] * norm_vals[ch];
+                        let data = value as f32 * norm_vals[ch] - mean_vals[ch] * norm_vals[ch];
                         buffer[dst_idx] = data;
                     }
                 }

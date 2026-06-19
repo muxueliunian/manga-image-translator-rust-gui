@@ -236,7 +236,7 @@ impl SegDetectorRepresenter {
         let mut boxes: Array3<i64> = Array3::zeros((num_contours, 4, 2));
 
         let mut scores: Vec<f64> = vec![0.0; num_contours];
-        for index in 0..num_contours {
+        for (index, score_slot) in scores.iter_mut().enumerate().take(num_contours) {
             let contour = contours.get(index)?;
             let (points, sside) = Self::get_mini_boxes(&contour)?;
             if sside < self.min_size {
@@ -283,7 +283,7 @@ impl SegDetectorRepresenter {
                 .map(|(idx, _)| idx)
                 .ok_or(anyhow!("box is empty"))?;
             let box_ = roll_rows(box_, 4 - startidx as isize);
-            scores[index] = score;
+            *score_slot = score;
             boxes
                 .slice_mut(s![index, .., ..])
                 .assign(&box_.mapv(|x| x as i64));
@@ -311,12 +311,9 @@ impl SegDetectorRepresenter {
         let offset = ClipperOffset::new(ClipperOffsetConfig::new(2.0, 0.25, false, false));
         offset.add_path(box_, ClipperJoinType_ROUND_JOIN, ClipperEndType_POLYGON_END);
         let temp = offset.execute(area);
-        let v = temp
-            .into_iter()
+        temp.into_iter()
             .map(|v| v.into_iter().map(|v| (v.x(), v.y())).collect::<Vec<_>>())
-            .collect::<Vec<_>>();
-
-        v
+            .collect::<Vec<_>>()
     }
 }
 

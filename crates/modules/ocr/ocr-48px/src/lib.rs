@@ -1,3 +1,15 @@
+#![allow(
+    clippy::len_zero,
+    clippy::manual_is_multiple_of,
+    clippy::borrow_deref_ref,
+    clippy::needless_range_loop,
+    clippy::ptr_arg,
+    clippy::self_assignment,
+    clippy::too_many_arguments,
+    clippy::type_complexity,
+    clippy::unnecessary_cast
+)]
+
 mod hypo;
 mod infer;
 

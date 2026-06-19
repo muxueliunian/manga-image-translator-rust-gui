@@ -1,3 +1,17 @@
+#![allow(
+    clippy::clone_on_copy,
+    clippy::deref_addrof,
+    clippy::explicit_auto_deref,
+    clippy::into_iter_on_ref,
+    clippy::len_zero,
+    clippy::needless_bool,
+    clippy::needless_borrow,
+    clippy::only_used_in_recursion,
+    clippy::ptr_arg,
+    clippy::too_many_arguments,
+    clippy::type_complexity
+)]
+
 use std::{
     collections::{HashMap, HashSet},
     f64::consts::PI,

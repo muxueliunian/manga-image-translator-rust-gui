@@ -35,7 +35,7 @@ pub fn prepare(
         .into_iter()
         .map(|(v, ver)| {
             v.lock().set_vert(ver);
-            let t = get_transformed_region(&*v.lock(), &img, text_height)?;
+            let t = get_transformed_region(&v.lock(), &img, text_height)?;
             Ok::<_, anyhow::Error>((t, v))
         })
         .collect::<Result<Vec<_>, _>>()?;
@@ -50,7 +50,7 @@ pub fn prepare(
                 &region_imgs,
                 &areas,
                 text_height as usize,
-                &debug_path,
+                debug_path,
             )
         })
         .collect::<Result<Vec<_>, _>>()?;

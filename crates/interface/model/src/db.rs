@@ -259,7 +259,7 @@ fn failure<P: AsRef<Path>>(base_path: Option<P>, file_path: P, expected_hash: &s
             let dir_hash = format!("{:x}", result);
             debug!("Dir hash: {}", dir_hash);
             if let Some(base_path) = base_path {
-                if &dir_hash == expected_hash {
+                if dir_hash == expected_hash {
                     let mut file = OpenOptions::new()
                         .append(true)
                         .create(true)
@@ -279,7 +279,7 @@ fn failure<P: AsRef<Path>>(base_path: Option<P>, file_path: P, expected_hash: &s
                     .unwrap();
                 }
             }
-            dir_hash != expected_hash.to_owned()
+            dir_hash != expected_hash
         }
         false => {
             let mut file = match std::fs::File::open(&file_path) {
@@ -298,7 +298,7 @@ fn failure<P: AsRef<Path>>(base_path: Option<P>, file_path: P, expected_hash: &s
             let file_hash = format!("{:x}", result);
             debug!("File hash: {}", file_hash);
             if let Some(base_path) = base_path {
-                if &file_hash == expected_hash {
+                if file_hash == expected_hash {
                     let mut file = OpenOptions::new()
                         .append(true)
                         .create(true)
@@ -319,7 +319,7 @@ fn failure<P: AsRef<Path>>(base_path: Option<P>, file_path: P, expected_hash: &s
                 }
             }
 
-            &file_hash != expected_hash
+            file_hash != expected_hash
         }
     }
 }
@@ -414,8 +414,8 @@ fn normalize_join(target_dir: &Path, relative_path: &Path) -> PathBuf {
     let cleaned = relative_path.strip_prefix(".").unwrap_or(relative_path);
 
     let mut rel_components = cleaned.components();
-    let tar_comp = target_dir.components();
-    let first = tar_comp.last();
+    let mut tar_comp = target_dir.components();
+    let first = tar_comp.next_back();
     let second = rel_components.next();
 
     if let (Some(Component::Normal(first)), Some(Component::Normal(second))) = (first, second) {

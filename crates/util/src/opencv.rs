@@ -94,10 +94,6 @@ pub fn convert_to_nd<T: Clone>(m: Mat) -> anyhow::Result<Array3<T>> {
         channels: usize,
         data: &[T],
     ) -> anyhow::Result<Array3<T>> {
-        let rows = rows;
-        let cols = cols;
-        let channels = channels;
-        let data = data;
         Ok(Array3::from_shape_vec(
             (rows, cols, channels),
             data.to_vec(),
