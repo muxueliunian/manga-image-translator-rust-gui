@@ -1,4 +1,4 @@
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicU8, Ordering};
 
 use log::{info, warn, Level};
 use ndarray::{Array, Array2, IxDyn};
@@ -22,10 +22,59 @@ pub enum Providers {
     RocM,
 }
 
-static REQUIRE_CUDA_OVERRIDE: AtomicBool = AtomicBool::new(false);
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum DeviceMode {
+    Auto,
+    Cuda,
+    Cpu,
+}
+
+impl Default for DeviceMode {
+    fn default() -> Self {
+        Self::Auto
+    }
+}
+
+static DEVICE_MODE: AtomicU8 = AtomicU8::new(device_mode_to_u8(DeviceMode::Auto));
+
+const fn device_mode_to_u8(mode: DeviceMode) -> u8 {
+    match mode {
+        DeviceMode::Auto => 0,
+        DeviceMode::Cuda => 1,
+        DeviceMode::Cpu => 2,
+    }
+}
+
+fn device_mode_from_u8(value: u8) -> DeviceMode {
+    match value {
+        1 => DeviceMode::Cuda,
+        2 => DeviceMode::Cpu,
+        _ => DeviceMode::Auto,
+    }
+}
+
+pub fn set_device_mode(mode: DeviceMode) -> bool {
+    let previous = DEVICE_MODE.swap(device_mode_to_u8(mode), Ordering::Relaxed);
+    previous != device_mode_to_u8(mode)
+}
+
+pub fn device_mode() -> DeviceMode {
+    let mode = device_mode_from_u8(DEVICE_MODE.load(Ordering::Relaxed));
+    if mode == DeviceMode::Auto && env_require_cuda() {
+        DeviceMode::Cuda
+    } else {
+        mode
+    }
+}
 
 pub fn set_require_cuda_override(require_cuda: bool) {
-    REQUIRE_CUDA_OVERRIDE.store(require_cuda, Ordering::Relaxed);
+    let mode = if require_cuda {
+        DeviceMode::Cuda
+    } else {
+        DeviceMode::Auto
+    };
+    set_device_mode(mode);
 }
 
 pub fn all_providers() -> Vec<Providers> {
@@ -59,10 +108,8 @@ pub fn new_session_(
     session_builder: SessionBuilder,
     providers: &[Providers],
 ) -> anyhow::Result<SessionBuilder> {
-    let require_cuda = require_cuda();
-    info!(
-        "Creating ONNX Runtime session: require_cuda={require_cuda}, provider_order={providers:?}"
-    );
+    let mode = device_mode();
+    info!("Creating ONNX Runtime session: device_mode={mode:?}, provider_order={providers:?}");
 
     let session_builder = session_builder
         .with_logger(Box::new(
@@ -89,25 +136,35 @@ pub fn new_session_(
         .with_parallel_execution(true)?
         .with_intra_threads(4)?
         .with_inter_threads(2)?;
+
+    if mode == DeviceMode::Cpu {
+        info!("Execution provider CPU in use");
+        return Ok(session_builder);
+    }
+
+    if mode == DeviceMode::Cuda {
+        let provider_ = Providers::CUDA;
+        let provider = build_provider(&provider_).error_on_failure();
+        return match session_builder
+            .clone()
+            .with_execution_providers(vec![provider])
+        {
+            Ok(session_builder) => {
+                info!("Execution provider {:?} in use", provider_);
+                Ok(session_builder)
+            }
+            Err(err) => {
+                warn!("Execution provider {:?} unavailable: {err}", provider_);
+                anyhow::bail!(
+                    "CUDA device mode requested, but the CUDA execution provider is unavailable. {} Original error: {err}",
+                    cuda_error_hint(&err.to_string())
+                );
+            }
+        };
+    }
+
     for provider_ in providers {
-        let provider = match provider_ {
-            Providers::TensorRT => TensorRTExecutionProvider::default()
-                .with_device_id(0)
-                .build(),
-            Providers::CUDA => CUDAExecutionProvider::default()
-                .with_device_id(0)
-                .with_arena_extend_strategy(ArenaExtendStrategy::SameAsRequested)
-                .build(),
-            Providers::DirectML => DirectMLExecutionProvider::default()
-                .with_device_id(0)
-                .build(),
-            Providers::CoreML => CoreMLExecutionProvider::default()
-                .with_model_cache_dir("models/cache")
-                .with_compute_units(ort::execution_providers::coreml::CoreMLComputeUnits::All)
-                .build(),
-            Providers::RocM => ROCmExecutionProvider::default().with_device_id(0).build(),
-        }
-        .error_on_failure();
+        let provider = build_provider(provider_).error_on_failure();
         match session_builder
             .clone()
             .with_execution_providers(vec![provider])
@@ -118,26 +175,34 @@ pub fn new_session_(
             }
             Err(err) => {
                 warn!("Execution provider {:?} unavailable: {err}", provider_);
-                if require_cuda && matches!(provider_, Providers::CUDA) {
-                    anyhow::bail!(
-                        "MIT_REQUIRE_CUDA=1 but the CUDA execution provider is unavailable. {} Original error: {err}",
-                        cuda_error_hint(&err.to_string())
-                    );
-                }
             }
         }
-    }
-    if require_cuda {
-        anyhow::bail!("MIT_REQUIRE_CUDA=1 but no CUDA execution provider was available");
     }
     info!("Execution provider CPU in use");
     Ok(session_builder)
 }
 
-fn require_cuda() -> bool {
-    if REQUIRE_CUDA_OVERRIDE.load(Ordering::Relaxed) {
-        return true;
+fn build_provider(provider: &Providers) -> ort::execution_providers::ExecutionProviderDispatch {
+    match provider {
+        Providers::TensorRT => TensorRTExecutionProvider::default()
+            .with_device_id(0)
+            .build(),
+        Providers::CUDA => CUDAExecutionProvider::default()
+            .with_device_id(0)
+            .with_arena_extend_strategy(ArenaExtendStrategy::SameAsRequested)
+            .build(),
+        Providers::DirectML => DirectMLExecutionProvider::default()
+            .with_device_id(0)
+            .build(),
+        Providers::CoreML => CoreMLExecutionProvider::default()
+            .with_model_cache_dir("models/cache")
+            .with_compute_units(ort::execution_providers::coreml::CoreMLComputeUnits::All)
+            .build(),
+        Providers::RocM => ROCmExecutionProvider::default().with_device_id(0).build(),
     }
+}
+
+fn env_require_cuda() -> bool {
     std::env::var("MIT_REQUIRE_CUDA")
         .map(|value| {
             matches!(

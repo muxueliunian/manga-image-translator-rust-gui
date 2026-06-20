@@ -11,8 +11,9 @@ thiserror.workspace = true
 opencv = { workspace = true, optional = true, features = ["clang-runtime"] }
 ureq.workspace = true
 log.workspace = true
+serde = { workspace = true, features = ["derive"], optional = true }
 
 [features]
 default = []
-onnx = ["dep:ort"]
+onnx = ["dep:ort", "dep:serde"]
 opencv = ["dep:opencv"]

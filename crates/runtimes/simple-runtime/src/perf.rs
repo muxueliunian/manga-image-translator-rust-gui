@@ -211,14 +211,10 @@ pub fn sample_nvidia_gpu_memory() -> Option<Vec<GpuMemorySample>> {
 }
 
 pub fn require_cuda() -> bool {
-    std::env::var("MIT_REQUIRE_CUDA")
-        .map(|value| {
-            matches!(
-                value.trim().to_ascii_lowercase().as_str(),
-                "1" | "true" | "yes" | "on"
-            )
-        })
-        .unwrap_or(false)
+    matches!(
+        base_util::onnx::device_mode(),
+        base_util::onnx::DeviceMode::Cuda
+    )
 }
 
 pub fn ensure_cuda_policy(cuda_available: bool) -> Result<()> {

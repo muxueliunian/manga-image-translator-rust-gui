@@ -794,6 +794,7 @@ dependencies = [
  "ndarray",
  "opencv",
  "ort",
+ "serde",
  "thiserror 2.0.17",
  "ureq",
 ]
@@ -6517,6 +6518,7 @@ dependencies = [
  "semver",
  "serde",
  "serde_json",
+ "sha2",
  "strum",
  "strum_macros",
  "tao",
@@ -6525,11 +6527,13 @@ dependencies = [
  "tokio",
  "tracing",
  "tracing-subscriber",
+ "ureq",
  "util",
  "uuid",
  "waifu2x",
  "walkdir",
  "wry",
+ "zip",
 ]
 
 [[package]]

@@ -35,6 +35,7 @@ mod debug;
 mod diagnostics;
 mod dict;
 mod execute;
+pub mod gpu_runtime;
 mod perf;
 pub mod settings;
 pub mod setup;
