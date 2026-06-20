@@ -2107,6 +2107,99 @@ svg {
   font-size: 11px;
 }
 
+.models-dot.warn {
+  background: #cf9b4a;
+}
+
+/* ── GPU acceleration (CUDA runtime) panel ── */
+.gpu-runtime {
+  margin-top: var(--space-3);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--line);
+}
+
+.gpu-rec {
+  margin-top: var(--space-2);
+  padding: 7px 10px;
+  border-radius: var(--radius-sm);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.gpu-rec-info {
+  color: var(--muted);
+  background: var(--surface-muted);
+}
+
+.gpu-rec-warn {
+  color: var(--text);
+  background: rgba(204, 120, 92, 0.14);
+  border: 1px solid rgba(204, 120, 92, 0.36);
+}
+
+.gpu-rec-ok {
+  color: #3f7a52;
+  background: rgba(90, 157, 107, 0.16);
+}
+
+.gpu-download {
+  margin-top: var(--space-2);
+}
+
+.gpu-restart {
+  margin-top: var(--space-2);
+  padding: 10px;
+  border-radius: var(--radius-sm);
+  background: rgba(204, 120, 92, 0.12);
+  border: 1px solid rgba(204, 120, 92, 0.32);
+}
+
+.gpu-restart-text {
+  margin: 0 0 var(--space-2);
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text);
+}
+
+.gpu-restart-actions {
+  display: flex;
+  gap: var(--space-2);
+}
+
+/* ── Main-screen device banner (Auto-needs-DLL / Force-CUDA-unavailable) ── */
+.device-banner {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: var(--space-2) 0;
+  padding: 7px 10px;
+  border-radius: var(--radius-sm);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.device-banner-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.device-banner .link-button {
+  flex: none;
+  white-space: nowrap;
+}
+
+.device-banner-warn {
+  color: var(--text);
+  background: rgba(204, 120, 92, 0.14);
+  border: 1px solid rgba(204, 120, 92, 0.36);
+}
+
+.device-banner-error {
+  color: var(--text);
+  background: rgba(201, 74, 74, 0.16);
+  border: 1px solid rgba(201, 74, 74, 0.45);
+}
+
 /* ── Canvas single-click preview + pan/zoom viewer (P3b/P4) ── */
 .canvas-preview {
   width: 100%;

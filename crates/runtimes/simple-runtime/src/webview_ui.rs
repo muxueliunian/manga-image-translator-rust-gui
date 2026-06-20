@@ -49,6 +49,7 @@ enum UserEvent {
     IpcResponse(IpcResponse<serde_json::Value>),
     Progress(ProgressEvent),
     Log(LogEvent),
+    Restart,
 }
 
 #[derive(Debug, Deserialize)]
@@ -82,6 +83,7 @@ enum IpcKind {
     DownloadModels,
     GetGpuRuntimeStatus,
     DownloadCudaRuntime,
+    RestartApp,
 }
 
 #[derive(Debug, Serialize)]
@@ -329,6 +331,13 @@ pub fn run() -> Result<()> {
             Event::UserEvent(UserEvent::Log(log)) => {
                 send_event(&webview, "log", log);
             }
+            Event::UserEvent(UserEvent::Restart) => {
+                save_window_state_from(&window);
+                if let Ok(exe) = std::env::current_exe() {
+                    let _ = std::process::Command::new(exe).spawn();
+                }
+                *control_flow = ControlFlow::Exit;
+            }
             Event::WindowEvent {
                 event: WindowEvent::CloseRequested,
                 ..
@@ -432,6 +441,20 @@ fn handle_ipc_message(
 
     if matches!(request.kind, IpcKind::DownloadCudaRuntime) {
         handle_download_cuda_runtime(request, proxy.clone());
+        return;
+    }
+
+    if matches!(request.kind, IpcKind::RestartApp) {
+        resolve_request(
+            webview,
+            IpcResponse::<serde_json::Value> {
+                id: request.id,
+                ok: true,
+                data: None,
+                error: None,
+            },
+        );
+        let _ = proxy.send_event(UserEvent::Restart);
         return;
     }
 
@@ -548,9 +571,10 @@ fn handle_ipc_request(request: &IpcRequest) -> Result<serde_json::Value> {
         }
         IpcKind::GetModelsStatus => Ok(build_models_status()),
         IpcKind::GetGpuRuntimeStatus => to_value(gpu_runtime::gpu_runtime_status()),
-        IpcKind::StartTranslation | IpcKind::DownloadModels | IpcKind::DownloadCudaRuntime => {
-            unreachable!("handled asynchronously")
-        }
+        IpcKind::StartTranslation
+        | IpcKind::DownloadModels
+        | IpcKind::DownloadCudaRuntime
+        | IpcKind::RestartApp => unreachable!("handled asynchronously"),
     }
 }
 

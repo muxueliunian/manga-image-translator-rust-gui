@@ -32,6 +32,32 @@ const i18n = {
     deviceModeAutoHint: "优先使用 GPU（CUDA），不可用时自动回退 CPU。",
     deviceModeCudaHint: "强制使用 CUDA：不可用时直接报错，绝不回退 CPU。",
     deviceModeCpuHint: "始终使用 CPU 推理，忽略 GPU。",
+    gpuSectionTitle: "GPU 加速",
+    gpuLayerDetect: "显卡",
+    gpuLayerDriver: "驱动",
+    gpuLayerDll: "运行时 DLL",
+    gpuLayerEp: "ONNX 加速",
+    gpuNoNvidia: "未检测到 NVIDIA 显卡",
+    gpuDriverNeed: "需 ≥ {min}",
+    gpuDriverOk: "已满足",
+    gpuDllReady: "已就绪",
+    gpuDllPartial: "{ready}/{total} 已就绪",
+    gpuEpOk: "可用",
+    gpuEpNo: "不可用",
+    gpuRecCpuOnly: "当前为 CPU-only 构建，不含 GPU 加速。",
+    gpuRecNoGpu: "未检测到 NVIDIA 显卡，将使用 CPU 推理。",
+    gpuRecDriver: "NVIDIA 驱动过旧，请更新到 {min} 或更高版本后重新检测。",
+    gpuRecNeedDll: "检测到可用显卡，下载 CUDA 运行时即可启用 GPU 加速。",
+    gpuRecReady: "GPU 加速已就绪。",
+    gpuDownloadBtn: "下载 CUDA 运行时（约 0.9 GB）",
+    gpuDownloading: "下载中…",
+    gpuRefresh: "重新检测",
+    gpuRestartReady: "CUDA 运行时已安装，重启应用后生效。",
+    gpuRestartNow: "立即重启",
+    gpuRestartLater: "稍后",
+    deviceBannerAutoNeedDll: "检测到可用 GPU。下载 CUDA 运行时即可启用加速。",
+    deviceBannerCudaUnavailable: "已选「强制 CUDA」，但 CUDA 当前不可用，翻译会直接报错。",
+    deviceBannerOpen: "前往 GPU 设置",
     debugMode: "调试输出",
     debugModeHint:
       "勾选后保存每张图的诊断中间产物（输入/mask/修补图、OCR 切片、JSON）到 logs/job_*_diagnostics。会变慢并占磁盘；阶段计时日志 job_*.log 始终保留，无需开此项。",
@@ -235,6 +261,32 @@ const i18n = {
     deviceModeAutoHint: "Prefer GPU (CUDA); fall back to CPU automatically when unavailable.",
     deviceModeCudaHint: "Force CUDA: fail fast if unavailable, never fall back to CPU.",
     deviceModeCpuHint: "Always run inference on CPU, ignoring the GPU.",
+    gpuSectionTitle: "GPU Acceleration",
+    gpuLayerDetect: "GPU",
+    gpuLayerDriver: "Driver",
+    gpuLayerDll: "Runtime DLLs",
+    gpuLayerEp: "ONNX EP",
+    gpuNoNvidia: "No NVIDIA GPU detected",
+    gpuDriverNeed: "needs ≥ {min}",
+    gpuDriverOk: "OK",
+    gpuDllReady: "Ready",
+    gpuDllPartial: "{ready}/{total} present",
+    gpuEpOk: "Available",
+    gpuEpNo: "Unavailable",
+    gpuRecCpuOnly: "This is a CPU-only build; no GPU acceleration.",
+    gpuRecNoGpu: "No NVIDIA GPU detected; CPU inference will be used.",
+    gpuRecDriver: "NVIDIA driver is too old. Update to {min} or newer, then re-check.",
+    gpuRecNeedDll: "GPU detected. Download the CUDA runtime to enable acceleration.",
+    gpuRecReady: "GPU acceleration is ready.",
+    gpuDownloadBtn: "Download CUDA runtime (~0.9 GB)",
+    gpuDownloading: "Downloading…",
+    gpuRefresh: "Re-check",
+    gpuRestartReady: "CUDA runtime installed. Restart the app to take effect.",
+    gpuRestartNow: "Restart now",
+    gpuRestartLater: "Later",
+    deviceBannerAutoNeedDll: "A usable GPU was detected. Download the CUDA runtime to enable acceleration.",
+    deviceBannerCudaUnavailable: "“Force CUDA” is selected, but CUDA is currently unavailable — translation will fail.",
+    deviceBannerOpen: "Open GPU settings",
     debugMode: "Debug dump",
     debugModeHint:
       "Save per-image diagnostics (input/mask/inpainted images, OCR patch crops, JSON) under logs/job_*_diagnostics. Slower and uses disk; the stage-timing job_*.log is always written, so leave this off for normal runs.",
@@ -473,6 +525,7 @@ const state = {
   pending: new Map(),
   isRunning: false,
   cudaErrorExpanded: false,
+  gpuStatus: null,
 };
 
 const els = {
@@ -494,6 +547,7 @@ const els = {
   cudaErrorDetail: document.getElementById("cudaErrorDetail"),
   deviceModeGroup: document.getElementById("deviceModeGroup"),
   deviceModeHint: document.getElementById("deviceModeHint"),
+  deviceBanner: document.getElementById("deviceBanner"),
   debugMode: document.getElementById("debugMode"),
   maxParallelImages: document.getElementById("maxParallelImages"),
   maxParallelGpuJobs: document.getElementById("maxParallelGpuJobs"),
@@ -557,6 +611,7 @@ const els = {
   pickModelDir: document.getElementById("pickModelDir"),
   autoDownload: document.getElementById("autoDownload"),
   modelsStatus: document.getElementById("modelsStatus"),
+  gpuRuntime: document.getElementById("gpuRuntime"),
   startTranslation: document.getElementById("startTranslation"),
   statusTitle: document.getElementById("statusTitle"),
   statusText: document.getElementById("statusText"),
@@ -627,6 +682,46 @@ function setDeviceMode(mode) {
 function updateDeviceModeHint() {
   if (!els.deviceModeHint) return;
   els.deviceModeHint.textContent = t(DEVICE_MODE_HINT_KEYS[getDeviceMode()]);
+}
+
+// Contextual nudge under the device selector: Auto + GPU-present-but-DLL-missing
+// gets a gentle prompt; Force-CUDA-but-unavailable gets a hard warning. Other
+// states (ready, CPU-only build, no GPU under Auto) show nothing.
+function updateDeviceBanner() {
+  const el = els.deviceBanner;
+  if (!el) return;
+  el.innerHTML = "";
+  el.className = "device-banner hidden";
+  const status = state.gpuStatus;
+  if (
+    !status ||
+    status.recommendation === "ready" ||
+    status.recommendation === "cpu_only_build"
+  ) {
+    return;
+  }
+  const mode = getDeviceMode();
+  let tone;
+  let msgKey;
+  if (mode === "cuda") {
+    tone = "error";
+    msgKey = "deviceBannerCudaUnavailable";
+  } else if (mode === "auto" && status.recommendation === "need_download_dll") {
+    tone = "warn";
+    msgKey = "deviceBannerAutoNeedDll";
+  } else {
+    return;
+  }
+  el.className = `device-banner device-banner-${tone}`;
+  const text = document.createElement("span");
+  text.className = "device-banner-text";
+  text.textContent = t(msgKey, { min: status.minDriver });
+  const open = document.createElement("button");
+  open.type = "button";
+  open.className = "link-button";
+  open.dataset.deviceBannerOpen = "1";
+  open.textContent = t("deviceBannerOpen");
+  el.append(text, open);
 }
 
 // One-line "what is this and when to pick it" guidance per model option.
@@ -2215,6 +2310,7 @@ async function openModelsModal() {
     addLog("error", err.message);
   }
   refreshModelsStatus();
+  refreshGpuRuntime();
 }
 
 // Pull the downloaded/missing table and render it. Called on modal open, after
@@ -2327,6 +2423,186 @@ async function downloadModelTargets(targets, button) {
   }
 }
 
+// ── GPU acceleration (CUDA runtime) panel ──────────────────────────────
+async function refreshGpuRuntime() {
+  if (!els.gpuRuntime) return;
+  try {
+    renderGpuRuntime(await invoke("getGpuRuntimeStatus"));
+  } catch (err) {
+    els.gpuRuntime.innerHTML = "";
+    const empty = document.createElement("p");
+    empty.className = "models-status-empty";
+    empty.textContent = t("modelStatusError", { err: err.message });
+    els.gpuRuntime.appendChild(empty);
+  }
+}
+
+// One status line: green dot = ok, amber = problem, muted = not-applicable.
+function gpuLayerRow(label, ok, meta, neutral = false) {
+  const row = document.createElement("div");
+  row.className = "models-row";
+  const dot = document.createElement("span");
+  dot.className = `models-dot ${neutral ? "missing" : ok ? "ready" : "warn"}`;
+  const name = document.createElement("span");
+  name.className = "models-label";
+  name.textContent = label;
+  const value = document.createElement("span");
+  value.className = "models-meta";
+  value.textContent = meta;
+  row.append(dot, name, value);
+  return row;
+}
+
+// Render the three-layer probe (GPU → driver → DLLs → ONNX EP) plus the
+// recommendation banner and, when DLLs are missing, a download button.
+function renderGpuRuntime(status) {
+  const el = els.gpuRuntime;
+  if (!el) return;
+  el.innerHTML = "";
+  if (!status) return;
+  state.gpuStatus = status;
+
+  const head = document.createElement("div");
+  head.className = "models-status-head";
+  const title = document.createElement("span");
+  title.className = "models-status-title";
+  title.textContent = t("gpuSectionTitle");
+  head.appendChild(title);
+  const actions = document.createElement("div");
+  actions.className = "models-status-actions";
+  const refreshBtn = document.createElement("button");
+  refreshBtn.type = "button";
+  refreshBtn.className = "ghost-button";
+  refreshBtn.dataset.gpuRefresh = "1";
+  refreshBtn.textContent = t("gpuRefresh");
+  actions.appendChild(refreshBtn);
+  head.appendChild(actions);
+  el.appendChild(head);
+
+  el.appendChild(
+    gpuLayerRow(
+      t("gpuLayerDetect"),
+      status.gpuDetected,
+      status.gpuDetected ? status.gpuName || "—" : t("gpuNoNvidia"),
+    ),
+  );
+  if (status.gpuDetected) {
+    el.appendChild(
+      gpuLayerRow(
+        t("gpuLayerDriver"),
+        status.driverOk,
+        status.driverOk
+          ? `${status.driverVersion || "—"} · ${t("gpuDriverOk")}`
+          : `${status.driverVersion || "—"} · ${t("gpuDriverNeed", { min: status.minDriver })}`,
+      ),
+    );
+  }
+  const dlls = status.dlls || [];
+  const present = dlls.filter((d) => d.present).length;
+  el.appendChild(
+    gpuLayerRow(
+      t("gpuLayerDll"),
+      status.dllAllPresent,
+      status.dllAllPresent
+        ? t("gpuDllReady")
+        : t("gpuDllPartial", { ready: present, total: dlls.length }),
+    ),
+  );
+  el.appendChild(
+    gpuLayerRow(
+      t("gpuLayerEp"),
+      status.epOk,
+      status.epOk ? t("gpuEpOk") : t("gpuEpNo"),
+      !status.epOk && status.recommendation !== "ready",
+    ),
+  );
+
+  const recKey =
+    {
+      cpu_only_build: "gpuRecCpuOnly",
+      no_gpu: "gpuRecNoGpu",
+      need_driver_update: "gpuRecDriver",
+      need_download_dll: "gpuRecNeedDll",
+      ready: "gpuRecReady",
+    }[status.recommendation] || "gpuRecNoGpu";
+  const tone =
+    status.recommendation === "ready"
+      ? "ok"
+      : status.recommendation === "need_download_dll" ||
+          status.recommendation === "need_driver_update"
+        ? "warn"
+        : "info";
+  const rec = document.createElement("div");
+  rec.className = `gpu-rec gpu-rec-${tone}`;
+  rec.textContent = t(recKey, { min: status.minDriver });
+  el.appendChild(rec);
+
+  if (status.recommendation === "need_download_dll") {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "secondary-button gpu-download";
+    btn.dataset.gpuDownload = "1";
+    btn.textContent = t("gpuDownloadBtn");
+    el.appendChild(btn);
+  }
+
+  updateDeviceBanner();
+}
+
+// Download streams progress to the shared status bar/log (same as model
+// downloads); resolve returns a fresh status. If ready, offer a restart.
+async function downloadCudaRuntimeFlow(button) {
+  if (button) {
+    button.disabled = true;
+    button.textContent = t("gpuDownloading");
+  }
+  try {
+    const status = await invoke("downloadCudaRuntime");
+    renderGpuRuntime(status);
+    if (status && status.recommendation === "ready") {
+      promptGpuRestart();
+    }
+  } catch (err) {
+    addLog("error", err.message);
+    refreshGpuRuntime();
+  }
+}
+
+// Freshly downloaded DLLs only load in a new process, so surface a one-click
+// restart prompt; the user decides when to relaunch.
+function promptGpuRestart() {
+  const el = els.gpuRuntime;
+  if (!el) return;
+  const box = document.createElement("div");
+  box.className = "gpu-restart";
+  const text = document.createElement("p");
+  text.className = "gpu-restart-text";
+  text.textContent = t("gpuRestartReady");
+  const row = document.createElement("div");
+  row.className = "gpu-restart-actions";
+  const now = document.createElement("button");
+  now.type = "button";
+  now.className = "primary-button";
+  now.dataset.gpuRestart = "1";
+  now.textContent = t("gpuRestartNow");
+  const later = document.createElement("button");
+  later.type = "button";
+  later.className = "ghost-button";
+  later.dataset.gpuRestartCancel = "1";
+  later.textContent = t("gpuRestartLater");
+  row.append(now, later);
+  box.append(text, row);
+  el.appendChild(box);
+}
+
+async function triggerRestart() {
+  try {
+    await invoke("restartApp");
+  } catch (err) {
+    addLog("error", err.message);
+  }
+}
+
 function closeModelsModal() {
   els.modelsModal.hidden = true;
 }
@@ -2429,6 +2705,7 @@ async function bootstrap() {
     setPreviewCollapsed(els.canvas.classList.contains("preview-collapsed"));
     applyOutputDir(state.outputDir, false);
     updateDeviceModeHint();
+    updateDeviceBanner();
   });
   els.togglePreview.addEventListener("click", () => {
     setPreviewCollapsed(!els.canvas.classList.contains("preview-collapsed"));
@@ -2455,6 +2732,24 @@ async function bootstrap() {
       return;
     }
     if (event.target.closest("[data-model-refresh]")) refreshModelsStatus();
+  });
+  els.gpuRuntime.addEventListener("click", (event) => {
+    const dl = event.target.closest("[data-gpu-download]");
+    if (dl) {
+      downloadCudaRuntimeFlow(dl);
+      return;
+    }
+    if (event.target.closest("[data-gpu-refresh]")) {
+      refreshGpuRuntime();
+      return;
+    }
+    if (event.target.closest("[data-gpu-restart]")) {
+      triggerRestart();
+      return;
+    }
+    if (event.target.closest("[data-gpu-restart-cancel]")) {
+      refreshGpuRuntime();
+    }
   });
   els.modelsModal.addEventListener("click", (event) => {
     if (event.target === els.modelsModal) closeModelsModal();
@@ -2620,6 +2915,10 @@ async function bootstrap() {
     const mode = getDeviceMode();
     localStorage.setItem("mitWebviewDevice", mode);
     updateDeviceModeHint();
+    updateDeviceBanner();
+  });
+  els.deviceBanner.addEventListener("click", (event) => {
+    if (event.target.closest("[data-device-banner-open]")) openModelsModal();
   });
 
   els.debugMode.checked = localStorage.getItem("mitWebviewDebug") === "1";
@@ -2646,6 +2945,15 @@ async function bootstrap() {
     setStatus(t("ipcUnavailable"), err.message);
     addLog("error", err.message);
   }
+
+  // Probe GPU runtime once (nvidia-smi etc.) without blocking startup; the
+  // device banner updates when it resolves.
+  invoke("getGpuRuntimeStatus")
+    .then((status) => {
+      state.gpuStatus = status;
+      updateDeviceBanner();
+    })
+    .catch(() => {});
 
   await loadConfig();
 }
