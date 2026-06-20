@@ -475,11 +475,25 @@
                 </div>
                 <pre id="cudaErrorDetail" class="cuda-detail hidden"></pre>
               </div>
+              <div class="field compact-field">
+                <span data-i18n="deviceMode">推理设备</span>
+                <div id="deviceModeGroup" class="seg-control" role="radiogroup" aria-label="推理设备">
+                  <label class="seg-option">
+                    <input type="radio" name="deviceMode" value="auto" checked>
+                    <span data-i18n="deviceModeAuto">自动</span>
+                  </label>
+                  <label class="seg-option">
+                    <input type="radio" name="deviceMode" value="cuda">
+                    <span data-i18n="deviceModeCuda">强制 CUDA</span>
+                  </label>
+                  <label class="seg-option">
+                    <input type="radio" name="deviceMode" value="cpu">
+                    <span data-i18n="deviceModeCpu">仅 CPU</span>
+                  </label>
+                </div>
+                <p id="deviceModeHint" class="field-hint"></p>
+              </div>
               <div class="toggle-grid">
-                <label class="check-field compact-check" data-i18n-title="requireCudaHint">
-                  <input id="requireCuda" type="checkbox">
-                  <span data-i18n="requireCuda">强制 CUDA</span>
-                </label>
                 <label class="check-field compact-check" data-i18n-title="debugModeHint">
                   <input id="debugMode" type="checkbox">
                   <span data-i18n="debugMode">调试输出</span>

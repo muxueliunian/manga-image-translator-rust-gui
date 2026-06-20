@@ -23,6 +23,7 @@ use wry::http::{header::CONTENT_TYPE, Response};
 use wry::WebViewBuilder;
 
 use crate::{
+    gpu_runtime,
     perf::{
         ensure_cuda_policy, format_duration, sample_nvidia_gpu_memory, JobLogger,
         RuntimeDiagnostics, StageTimer,
@@ -79,6 +80,8 @@ enum IpcKind {
     SetAutoDownload,
     GetModelsStatus,
     DownloadModels,
+    GetGpuRuntimeStatus,
+    DownloadCudaRuntime,
 }
 
 #[derive(Debug, Serialize)]
@@ -138,7 +141,7 @@ struct StartTranslationPayload {
     settings: Settings,
     output_format: String,
     #[serde(default)]
-    require_cuda: bool,
+    device_mode: base_util::onnx::DeviceMode,
     #[serde(default = "default_max_parallel_images")]
     max_parallel_images: usize,
     #[serde(default = "default_max_parallel_gpu_jobs")]
@@ -427,6 +430,11 @@ fn handle_ipc_message(
         return;
     }
 
+    if matches!(request.kind, IpcKind::DownloadCudaRuntime) {
+        handle_download_cuda_runtime(request, proxy.clone());
+        return;
+    }
+
     let response = match handle_ipc_request(&request) {
         Ok(value) => IpcResponse {
             id: request.id,
@@ -539,7 +547,8 @@ fn handle_ipc_request(request: &IpcRequest) -> Result<serde_json::Value> {
             to_value(config)
         }
         IpcKind::GetModelsStatus => Ok(build_models_status()),
-        IpcKind::StartTranslation | IpcKind::DownloadModels => {
+        IpcKind::GetGpuRuntimeStatus => to_value(gpu_runtime::gpu_runtime_status()),
+        IpcKind::StartTranslation | IpcKind::DownloadModels | IpcKind::DownloadCudaRuntime => {
             unreachable!("handled asynchronously")
         }
     }
@@ -578,6 +587,92 @@ fn handle_download_models(request: IpcRequest, proxy: tao::event_loop::EventLoop
             let jobs = setup::download_jobs(&payload.targets);
             run_download_jobs(jobs, &proxy);
             Ok(build_models_status())
+        })();
+
+        let response = match result {
+            Ok(value) => IpcResponse {
+                id: request.id,
+                ok: true,
+                data: Some(value),
+                error: None,
+            },
+            Err(err) => IpcResponse::<serde_json::Value> {
+                id: request.id,
+                ok: false,
+                data: None,
+                error: Some(err.to_string()),
+            },
+        };
+        let _ = proxy.send_event(UserEvent::IpcResponse(response));
+    });
+}
+
+fn handle_download_cuda_runtime(
+    request: IpcRequest,
+    proxy: tao::event_loop::EventLoopProxy<UserEvent>,
+) {
+    thread::spawn(move || {
+        let result = (|| -> Result<serde_json::Value> {
+            let started = Instant::now();
+            let mut last_emit: Option<Instant> = None;
+            gpu_runtime::download_cuda_runtime(
+                |event| {
+                    let now = Instant::now();
+                    let done = event.total_bytes > 0 && event.downloaded >= event.total_bytes;
+                    if !done {
+                        if let Some(prev) = last_emit {
+                            if now.duration_since(prev) < Duration::from_millis(150) {
+                                return;
+                            }
+                        }
+                    }
+                    last_emit = Some(now);
+                    let percent = if event.total_bytes > 0 {
+                        ((event.downloaded as f64 / event.total_bytes as f64) * 100.0)
+                            .round()
+                            .min(100.0) as u8
+                    } else {
+                        0
+                    };
+                    let elapsed = started.elapsed().as_secs_f64().max(0.001);
+                    let speed = event.downloaded as f64 / elapsed;
+                    let message = if event.total_bytes > 0 {
+                        format!(
+                            "下载 CUDA runtime {} {} · {} / {} · {}/s",
+                            event.package,
+                            event.version,
+                            fmt_bytes(event.downloaded),
+                            fmt_bytes(event.total_bytes),
+                            fmt_bytes(speed as u64),
+                        )
+                    } else {
+                        format!(
+                            "下载 CUDA runtime {} {} · {} · {}/s",
+                            event.package,
+                            event.version,
+                            fmt_bytes(event.downloaded),
+                            fmt_bytes(speed as u64),
+                        )
+                    };
+                    let _ = proxy.send_event(UserEvent::Progress(ProgressEvent {
+                        current: event.current,
+                        total: event.total,
+                        percent,
+                        message,
+                    }));
+                },
+                |level, message| send_log(&proxy, level, message),
+            )?;
+            send_progress(
+                &proxy,
+                1,
+                1,
+                format!(
+                    "CUDA runtime DLL 下载完成，安装目录：{}",
+                    gpu_runtime::cuda_runtime_dir().display()
+                ),
+            );
+            Ok(to_value(gpu_runtime::gpu_runtime_status())?)
         })();
 
         let response = match result {
@@ -960,48 +1055,63 @@ async fn run_translation_job(
     );
     logger.log("info", format!("log_file={}", logger.path().display()));
 
+    if base_util::onnx::set_device_mode(payload.device_mode) {
+        let mut guard = models.lock().await;
+        *guard = None;
+        logger.log("info", "device changed -> reloading models");
+        send_log(&proxy, "info", "device changed -> reloading models");
+    }
+
     let cuda_error = check_cuda_error();
     let cuda = cuda_error.is_none();
-    base_util::onnx::set_require_cuda_override(payload.require_cuda);
     let diagnostics = RuntimeDiagnostics::collect_with_error(cuda, cuda_error.clone());
-    let effective_require_cuda = diagnostics.require_cuda || payload.require_cuda;
-    let effective_provider_status = if cuda {
-        "CUDA available".to_owned()
-    } else if effective_require_cuda {
-        "CUDA unavailable".to_owned()
-    } else {
-        diagnostics.provider_status.clone()
+    let device_mode = base_util::onnx::device_mode();
+    let require_cuda = device_mode == base_util::onnx::DeviceMode::Cuda;
+    let effective_provider_status = match device_mode {
+        base_util::onnx::DeviceMode::Cpu => "CPU forced".to_owned(),
+        base_util::onnx::DeviceMode::Cuda if cuda => "CUDA available".to_owned(),
+        base_util::onnx::DeviceMode::Cuda => "CUDA unavailable".to_owned(),
+        base_util::onnx::DeviceMode::Auto => diagnostics.provider_status.clone(),
     };
     logger.log(
         "info",
         format!(
-            "runtime cuda_feature={}, cuda_available={}, require_cuda={}, gui_require_cuda={}, provider_status={}, cuda_error={}",
+            "runtime cuda_feature={}, cuda_available={}, device_mode={:?}, require_cuda={}, provider_status={}, cuda_error={}",
             diagnostics.cuda_feature,
             diagnostics.cuda_available,
-            diagnostics.require_cuda,
-            payload.require_cuda,
+            device_mode,
+            require_cuda,
             effective_provider_status,
             diagnostics.cuda_error.as_deref().unwrap_or("")
         ),
     );
-    if cuda && !payload.require_cuda && !diagnostics.require_cuda {
-        logger.log(
-            "info",
-            "CUDA is available and will be preferred automatically. Force CUDA only disables CPU fallback.",
-        );
+    match device_mode {
+        base_util::onnx::DeviceMode::Cpu => {
+            logger.log(
+                "info",
+                "CPU inference is forced; GPU providers will be skipped.",
+            );
+        }
+        base_util::onnx::DeviceMode::Auto if cuda => {
+            logger.log(
+                "info",
+                "CUDA is available and will be preferred automatically. Force CUDA only disables CPU fallback.",
+            );
+        }
+        _ => {}
     }
     send_log(
         &proxy,
-        if diagnostics.cuda_available {
-            "success"
-        } else {
-            "warn"
+        match device_mode {
+            base_util::onnx::DeviceMode::Cpu => "info",
+            _ if cuda => "success",
+            _ => "warn",
         },
         format!("推理状态: {effective_provider_status}"),
     );
-    if payload.require_cuda && !cuda {
+    if device_mode == base_util::onnx::DeviceMode::Cuda && !cuda {
         anyhow::bail!(
-            "GUI requested CUDA, but CUDA is not available. {}",
+            "CUDA was requested, but CUDA is not available. {}",
             diagnostics
                 .cuda_error
                 .as_deref()

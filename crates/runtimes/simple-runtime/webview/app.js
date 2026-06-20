@@ -25,8 +25,13 @@ const i18n = {
     outputDirHint: "选择导出目录（翻译结果导出到此）",
     outputFormat: "输出格式",
     textDirection: "文字方向",
-    requireCuda: "强制 CUDA",
-    requireCudaHint: "勾选后 CUDA 不可用时直接报错，不静默回退 CPU。",
+    deviceMode: "推理设备",
+    deviceModeAuto: "自动",
+    deviceModeCuda: "强制 CUDA",
+    deviceModeCpu: "仅 CPU",
+    deviceModeAutoHint: "优先使用 GPU（CUDA），不可用时自动回退 CPU。",
+    deviceModeCudaHint: "强制使用 CUDA：不可用时直接报错，绝不回退 CPU。",
+    deviceModeCpuHint: "始终使用 CPU 推理，忽略 GPU。",
     debugMode: "调试输出",
     debugModeHint:
       "勾选后保存每张图的诊断中间产物（输入/mask/修补图、OCR 切片、JSON）到 logs/job_*_diagnostics。会变慢并占磁盘；阶段计时日志 job_*.log 始终保留，无需开此项。",
@@ -223,8 +228,13 @@ const i18n = {
     outputDirHint: "Choose export directory (translated results export here)",
     outputFormat: "Output Format",
     textDirection: "Text Direction",
-    requireCuda: "Require CUDA, no CPU fallback",
-    requireCudaHint: "Fail fast if CUDA is unavailable instead of silently falling back to CPU.",
+    deviceMode: "Inference Device",
+    deviceModeAuto: "Auto",
+    deviceModeCuda: "Force CUDA",
+    deviceModeCpu: "CPU only",
+    deviceModeAutoHint: "Prefer GPU (CUDA); fall back to CPU automatically when unavailable.",
+    deviceModeCudaHint: "Force CUDA: fail fast if unavailable, never fall back to CPU.",
+    deviceModeCpuHint: "Always run inference on CPU, ignoring the GPU.",
     debugMode: "Debug dump",
     debugModeHint:
       "Save per-image diagnostics (input/mask/inpainted images, OCR patch crops, JSON) under logs/job_*_diagnostics. Slower and uses disk; the stage-timing job_*.log is always written, so leave this off for normal runs.",
@@ -482,7 +492,8 @@ const els = {
   cudaErrorSummary: document.getElementById("cudaErrorSummary"),
   cudaErrorToggle: document.getElementById("cudaErrorToggle"),
   cudaErrorDetail: document.getElementById("cudaErrorDetail"),
-  requireCuda: document.getElementById("requireCuda"),
+  deviceModeGroup: document.getElementById("deviceModeGroup"),
+  deviceModeHint: document.getElementById("deviceModeHint"),
   debugMode: document.getElementById("debugMode"),
   maxParallelImages: document.getElementById("maxParallelImages"),
   maxParallelGpuJobs: document.getElementById("maxParallelGpuJobs"),
@@ -592,6 +603,30 @@ function t(key, vars = {}) {
     (text, [name, value]) => text.replaceAll(`{${name}}`, String(value)),
     template,
   );
+}
+
+const DEVICE_MODES = ["auto", "cuda", "cpu"];
+const DEVICE_MODE_HINT_KEYS = {
+  auto: "deviceModeAutoHint",
+  cuda: "deviceModeCudaHint",
+  cpu: "deviceModeCpuHint",
+};
+
+function getDeviceMode() {
+  const value = els.deviceModeGroup?.querySelector("input:checked")?.value;
+  return DEVICE_MODES.includes(value) ? value : "auto";
+}
+
+function setDeviceMode(mode) {
+  const value = DEVICE_MODES.includes(mode) ? mode : "auto";
+  const target = els.deviceModeGroup?.querySelector(`input[value="${value}"]`);
+  if (target) target.checked = true;
+  updateDeviceModeHint();
+}
+
+function updateDeviceModeHint() {
+  if (!els.deviceModeHint) return;
+  els.deviceModeHint.textContent = t(DEVICE_MODE_HINT_KEYS[getDeviceMode()]);
 }
 
 // One-line "what is this and when to pick it" guidance per model option.
@@ -1715,7 +1750,7 @@ async function startTranslation() {
       input_paths: inputs,
       settings,
       output_format: els.outputFormat.value,
-      require_cuda: els.requireCuda.checked,
+      device_mode: getDeviceMode(),
       debug: els.debugMode.checked,
       max_parallel_images: parseIntegerOrDefault(els.maxParallelImages.value, 2),
       max_parallel_gpu_jobs: parseIntegerOrDefault(els.maxParallelGpuJobs.value, 1),
@@ -2393,6 +2428,7 @@ async function bootstrap() {
     // applyLang reset elements to their data-i18n defaults; restore dynamic labels.
     setPreviewCollapsed(els.canvas.classList.contains("preview-collapsed"));
     applyOutputDir(state.outputDir, false);
+    updateDeviceModeHint();
   });
   els.togglePreview.addEventListener("click", () => {
     setPreviewCollapsed(!els.canvas.classList.contains("preview-collapsed"));
@@ -2579,6 +2615,13 @@ async function bootstrap() {
     renderLogEmptyState();
   });
 
+  setDeviceMode(localStorage.getItem("mitWebviewDevice") || "auto");
+  els.deviceModeGroup.addEventListener("change", () => {
+    const mode = getDeviceMode();
+    localStorage.setItem("mitWebviewDevice", mode);
+    updateDeviceModeHint();
+  });
+
   els.debugMode.checked = localStorage.getItem("mitWebviewDebug") === "1";
   els.debugMode.addEventListener("change", () => {
     localStorage.setItem("mitWebviewDebug", els.debugMode.checked ? "1" : "0");
@@ -2589,7 +2632,6 @@ async function bootstrap() {
     const diagnostics = ready.diagnostics || {};
     els.backendBadge.textContent = `${ready.backend} / ${ready.platform}`;
     updateProviderStatus(diagnostics.provider_status || "CUDA unknown");
-    els.requireCuda.checked = Boolean(diagnostics.require_cuda);
     updateCudaError(diagnostics);
     addLog("success", `${t("backendReady")}: ${ready.version}`);
     addLog(
