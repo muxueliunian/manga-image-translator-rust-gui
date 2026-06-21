@@ -16,20 +16,49 @@ use crate::update;
 // CUDA-12.0 floor soft gate - revisit.
 pub const MIN_DRIVER_VERSION: &str = "527.41";
 
-const REQUIRED_DLLS: [&str; 5] = [
-    "cublasLt64_12.dll",
-    "cublas64_12.dll",
-    "cufft64_11.dll",
-    "cudart64_12.dll",
+const CUDA_RUNTIME_DLLS: &[&str] = &["cudart64_12.dll"];
+const CUBLAS_DLLS: &[&str] = &["cublasLt64_12.dll", "cublas64_12.dll"];
+const CUFFT_DLLS: &[&str] = &["cufft64_11.dll"];
+const CUDNN_DLLS: &[&str] = &[
     "cudnn64_9.dll",
+    "cudnn_adv64_9.dll",
+    "cudnn_cnn64_9.dll",
+    "cudnn_engines_precompiled64_9.dll",
+    "cudnn_engines_runtime_compiled64_9.dll",
+    "cudnn_graph64_9.dll",
+    "cudnn_heuristic64_9.dll",
+    "cudnn_ops64_9.dll",
 ];
 
-const WHEEL_PACKAGES: [(&str, &str); 4] = [
-    ("nvidia-cuda-runtime-cu12", "12.4.127"),
-    ("nvidia-cublas-cu12", "12.4.5.8"),
-    ("nvidia-cufft-cu12", "11.2.1.3"),
-    ("nvidia-cudnn-cu12", "9.11.0.98"),
+const RUNTIME_PACKAGES: [RuntimePackage; 4] = [
+    RuntimePackage {
+        package: "nvidia-cuda-runtime-cu12",
+        version: "12.4.127",
+        dlls: CUDA_RUNTIME_DLLS,
+    },
+    RuntimePackage {
+        package: "nvidia-cublas-cu12",
+        version: "12.4.5.8",
+        dlls: CUBLAS_DLLS,
+    },
+    RuntimePackage {
+        package: "nvidia-cufft-cu12",
+        version: "11.2.1.3",
+        dlls: CUFFT_DLLS,
+    },
+    RuntimePackage {
+        package: "nvidia-cudnn-cu12",
+        version: "9.11.0.98",
+        dlls: CUDNN_DLLS,
+    },
 ];
+
+#[derive(Debug, Clone, Copy)]
+struct RuntimePackage {
+    package: &'static str,
+    version: &'static str,
+    dlls: &'static [&'static str],
+}
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -41,6 +70,7 @@ pub struct NvidiaGpu {
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DllStatus {
+    pub package: &'static str,
     pub name: &'static str,
     pub present: bool,
 }
@@ -64,6 +94,7 @@ pub struct GpuRuntimeStatus {
 pub struct WheelSpec {
     pub package: &'static str,
     pub version: &'static str,
+    pub expected_dlls: &'static [&'static str],
     pub filename: String,
     pub url: String,
     pub sha256: String,
@@ -132,12 +163,14 @@ pub fn cuda_runtime_dir() -> PathBuf {
 
 pub fn check_runtime_dlls() -> Vec<DllStatus> {
     let runtime_dir = cuda_runtime_dir();
-    REQUIRED_DLLS
+    RUNTIME_PACKAGES
         .iter()
-        .copied()
-        .map(|name| DllStatus {
-            name,
-            present: runtime_dir.join(name).is_file(),
+        .flat_map(|package| {
+            package.dlls.iter().copied().map(|name| DllStatus {
+                package: package.package,
+                name,
+                present: dll_ready(&runtime_dir, name),
+            })
         })
         .collect()
 }
@@ -179,7 +212,7 @@ pub fn gpu_runtime_status() -> GpuRuntimeStatus {
 }
 
 pub fn wheel_download_plan() -> Vec<WheelSpec> {
-    try_wheel_download_plan().unwrap_or_default()
+    try_wheel_download_plan(&RUNTIME_PACKAGES).unwrap_or_default()
 }
 
 pub fn download_cuda_runtime<P, L>(mut progress: P, mut log: L) -> Result<()>
@@ -188,7 +221,24 @@ where
     L: FnMut(&str, String),
 {
     log("info", "解析 CUDA 运行时 wheel 下载地址…".to_owned());
-    let plan = try_wheel_download_plan()?;
+    let missing = missing_runtime_packages();
+    if missing.is_empty() {
+        log("success", "CUDA runtime DLL 已完整，无需下载。".to_owned());
+        return Ok(());
+    }
+    log(
+        "info",
+        format!(
+            "检测到缺失 CUDA runtime DLL，将补齐 {} 个 wheel: {}",
+            missing.len(),
+            missing
+                .iter()
+                .map(|package| package.package)
+                .collect::<Vec<_>>()
+                .join(", ")
+        ),
+    );
+    let plan = try_wheel_download_plan(&missing)?;
     if plan.is_empty() {
         return Err(anyhow!("未找到可下载的 Windows x64 CUDA runtime wheel"));
     }
@@ -208,7 +258,18 @@ where
         let result = (|| -> Result<usize> {
             verify_sha256(&temp_path, &wheel.sha256)
                 .with_context(|| format!("SHA256 校验失败: {}", wheel.filename))?;
-            extract_dlls(&temp_path).with_context(|| format!("解压失败: {}", wheel.filename))
+            let report = extract_dlls(&temp_path, wheel.expected_dlls)
+                .with_context(|| format!("解压失败: {}", wheel.filename))?;
+            if report.skipped_existing > 0 {
+                log(
+                    "info",
+                    format!(
+                        "{} 已存在非空 DLL，跳过覆盖 {} 个",
+                        wheel.package, report.skipped_existing
+                    ),
+                );
+            }
+            Ok(report.written)
         })();
         let _ = fs::remove_file(&temp_path);
         let extracted = result?;
@@ -220,18 +281,28 @@ where
             ),
         );
     }
+    let missing = missing_runtime_dll_names();
+    if !missing.is_empty() {
+        return Err(anyhow!(
+            "CUDA runtime DLL 仍不完整，缺失: {}",
+            missing.join(", ")
+        ));
+    }
     Ok(())
 }
 
-fn try_wheel_download_plan() -> Result<Vec<WheelSpec>> {
-    WHEEL_PACKAGES
+fn try_wheel_download_plan(packages: &[RuntimePackage]) -> Result<Vec<WheelSpec>> {
+    packages
         .iter()
-        .map(|(package, version)| resolve_wheel(package, version))
+        .map(|package| resolve_wheel(package))
         .collect()
 }
 
-fn resolve_wheel(package: &'static str, version: &'static str) -> Result<WheelSpec> {
-    let url = format!("https://pypi.org/pypi/{package}/{version}/json");
+fn resolve_wheel(package: &RuntimePackage) -> Result<WheelSpec> {
+    let url = format!(
+        "https://pypi.org/pypi/{}/{}/json",
+        package.package, package.version
+    );
     let mut response = ureq::get(&url)
         .call()
         .with_context(|| format!("请求 PyPI 失败: {url}"))?;
@@ -247,11 +318,18 @@ fn resolve_wheel(package: &'static str, version: &'static str) -> Result<WheelSp
         .urls
         .into_iter()
         .find(|entry| entry.filename.contains("win_amd64") && entry.filename.ends_with(".whl"))
-        .ok_or_else(|| anyhow!("PyPI 未提供 Windows x64 wheel: {package}=={version}"))?;
+        .ok_or_else(|| {
+            anyhow!(
+                "PyPI 未提供 Windows x64 wheel: {}=={}",
+                package.package,
+                package.version
+            )
+        })?;
 
     Ok(WheelSpec {
-        package,
-        version,
+        package: package.package,
+        version: package.version,
+        expected_dlls: package.dlls,
         filename: file.filename,
         url: file.url,
         sha256: file.digests.sha256,
@@ -363,11 +441,14 @@ fn verify_sha256(path: &Path, expected: &str) -> Result<()> {
     }
 }
 
-fn extract_dlls(wheel_path: &Path) -> Result<usize> {
+fn extract_dlls(
+    wheel_path: &Path,
+    expected_dlls: &'static [&'static str],
+) -> Result<ExtractReport> {
     let file = File::open(wheel_path)?;
     let mut archive = ZipArchive::new(file)?;
     let runtime_dir = cuda_runtime_dir();
-    let mut extracted = 0usize;
+    let mut report = ExtractReport::default();
 
     for index in 0..archive.len() {
         let mut entry = archive.by_index(index)?;
@@ -383,14 +464,61 @@ fn extract_dlls(wheel_path: &Path) -> Result<usize> {
         if !file_name.to_ascii_lowercase().ends_with(".dll") {
             continue;
         }
+        if !expected_dlls
+            .iter()
+            .any(|dll| dll.eq_ignore_ascii_case(file_name))
+        {
+            continue;
+        }
         let out_path = runtime_dir.join(file_name);
+        if dll_ready(&runtime_dir, file_name) {
+            report.skipped_existing += 1;
+            continue;
+        }
         let mut out_file = File::create(&out_path)
             .with_context(|| format!("写入 DLL 失败: {}", out_path.display()))?;
         std::io::copy(&mut entry, &mut out_file)?;
-        extracted += 1;
+        report.written += 1;
     }
 
-    Ok(extracted)
+    Ok(report)
+}
+
+#[derive(Debug, Default)]
+struct ExtractReport {
+    written: usize,
+    skipped_existing: usize,
+}
+
+fn missing_runtime_packages() -> Vec<RuntimePackage> {
+    let runtime_dir = cuda_runtime_dir();
+    RUNTIME_PACKAGES
+        .iter()
+        .copied()
+        .filter(|package| {
+            package
+                .dlls
+                .iter()
+                .any(|name| !dll_ready(&runtime_dir, name))
+        })
+        .collect()
+}
+
+fn missing_runtime_dll_names() -> Vec<&'static str> {
+    let runtime_dir = cuda_runtime_dir();
+    RUNTIME_PACKAGES
+        .iter()
+        .flat_map(|package| package.dlls.iter().copied())
+        .filter(|name| !dll_ready(&runtime_dir, name))
+        .collect()
+}
+
+fn dll_ready(runtime_dir: &Path, name: &str) -> bool {
+    runtime_dir
+        .join(name)
+        .metadata()
+        .map(|meta| meta.is_file() && meta.len() > 0)
+        .unwrap_or(false)
 }
 
 fn temp_wheel_path(filename: &str) -> PathBuf {
