@@ -37,6 +37,7 @@ mod dict;
 mod execute;
 pub mod gpu_runtime;
 mod perf;
+mod proxy;
 pub mod settings;
 pub mod setup;
 mod update;
@@ -113,8 +114,17 @@ fn logs_dir() -> &'static Path {
     Path::new("logs")
 }
 
-#[tokio::main]
-async fn main() {
+fn main() {
+    proxy::apply_system_proxy();
+
+    tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+        .expect("Failed to build Tokio runtime")
+        .block_on(async_main());
+}
+
+async fn async_main() {
     let cli = cli::Cli::parse();
     let (level, ort_level) = match cli.verbose {
         3 | 2 => ("debug", "ort=debug"),

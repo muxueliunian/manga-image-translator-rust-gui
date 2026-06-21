@@ -710,7 +710,7 @@ fn handle_download_cuda_runtime(
                 id: request.id,
                 ok: false,
                 data: None,
-                error: Some(err.to_string()),
+                error: Some(format!("{err:#}")),
             },
         };
         let _ = proxy.send_event(UserEvent::IpcResponse(response));

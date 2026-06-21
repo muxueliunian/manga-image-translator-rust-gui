@@ -72,6 +72,9 @@ tao = "0.35.3"
 wry = { version = "0.55.1", features = ["protocol"] }
 zip = { version = "2.4.2", default-features = false, features = ["deflate"] }
 
+[target.'cfg(windows)'.dependencies]
+winreg = "0.55"
+
 [features]
 cuda = ["ort/cuda"]
 coreml = ["ort/coreml"]
