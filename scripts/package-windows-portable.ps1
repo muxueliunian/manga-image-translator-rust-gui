@@ -2,6 +2,7 @@ param(
     [switch]$Cuda,
     [switch]$NoZip,
     [switch]$DownloadCudaRuntime,
+    [switch]$ProviderOnly,
     [string[]]$CudaRuntimeDir = @()
 )
 
@@ -369,14 +370,25 @@ foreach ($dir in @("config", "models", "uploads", "results")) {
 Copy-Item -LiteralPath $BinaryPath -Destination $PortableDir -Force
 
 Write-Step "Collecting runtime DLLs from target/release"
-$runtimeDllPatterns = @(
-    "*.dll"
-)
-foreach ($pattern in $runtimeDllPatterns) {
-    Get-ChildItem -LiteralPath $ReleaseDir -Filter $pattern -File -ErrorAction SilentlyContinue |
-        Where-Object { -not $_.Name.StartsWith("._") } |
-        ForEach-Object { Copy-Item -LiteralPath $_.FullName -Destination $PortableDir -Force }
+$skipDllPatterns = @()
+if ($Cuda -and $ProviderOnly) {
+    # Provider-only package: ship the heavy CUDA runtime DLLs (cublas/cufft/
+    # cudart, cudnn sub-libraries) via in-app download, NOT in the package.
+    # IMPORTANT: keep cudnn64_9.dll itself — simple-runtime.exe load-time imports
+    # it, so the app cannot even start without the (266 KB) cuDNN dispatcher.
+    # The in-app download later overwrites it with the full cuDNN 9 stack.
+    $skipDllPatterns = @(
+        "cublas64_*", "cublasLt64_*", "cufft64_*", "cudart64_*",
+        "cudnn_*", "nvrtc*", "nvrtc-builtins*", "nvJitLink64_*"
+    )
 }
+Get-ChildItem -LiteralPath $ReleaseDir -Filter "*.dll" -File -ErrorAction SilentlyContinue |
+    Where-Object { -not $_.Name.StartsWith("._") } |
+    Where-Object {
+        $name = $_.Name
+        -not ($skipDllPatterns | Where-Object { $name -like $_ })
+    } |
+    ForEach-Object { Copy-Item -LiteralPath $_.FullName -Destination $PortableDir -Force }
 
 Write-Step "Collecting OpenCV DLLs"
 $openCvCopied = Copy-OpenCvDlls -Destination $PortableDir
@@ -391,11 +403,19 @@ if ($Cuda) {
     if (-not (Test-Path -LiteralPath $cudaDll)) {
         throw "CUDA packaging was requested, but onnxruntime_providers_cuda.dll was not found in target/release."
     }
-    if ($DownloadCudaRuntime) {
-        Install-CudaRuntimeFromPython
+    if ($ProviderOnly) {
+        # G0 unified package: ship only the ONNX Runtime CUDA provider DLL. The
+        # heavy CUDA runtime DLLs (cublas/cufft/cudart/cudnn, ~0.9 GB) are NOT
+        # bundled; the app downloads them on demand via the in-app GPU panel.
+        Write-Step "Provider-only CUDA package: skipping CUDA runtime DLL bundling (downloaded in-app)"
+        $cudaRuntimeCopied = 0
+    } else {
+        if ($DownloadCudaRuntime) {
+            Install-CudaRuntimeFromPython
+        }
+        Write-Step "Collecting CUDA runtime DLLs"
+        $cudaRuntimeCopied = Copy-CudaRuntimeDlls -Destination $PortableDir
     }
-    Write-Step "Collecting CUDA runtime DLLs"
-    $cudaRuntimeCopied = Copy-CudaRuntimeDlls -Destination $PortableDir
 } else {
     $cudaRuntimeCopied = 0
 }
@@ -442,6 +462,16 @@ Packaging notes:
 - Set MIT_REQUIRE_CUDA=1 before starting a launcher, or enable Require CUDA in WebView, to fail fast when CUDA is unavailable.
 - All launchers cd to their own directory before starting simple-runtime.exe.
 "@
+if ($Cuda -and $ProviderOnly) {
+    $readme += @"
+
+GPU acceleration (unified package):
+- This package bundles the ONNX Runtime CUDA provider but NOT the ~0.9 GB CUDA
+  runtime DLLs (cublas/cufft/cudart/cudnn).
+- Start the app, open Models -> GPU Acceleration, and click Download CUDA runtime
+  to fetch them, then restart. Without them the app runs on CPU automatically.
+"@
+}
 Set-Content -LiteralPath (Join-Path $PortableDir "README-portable.txt") -Value $readme -Encoding ASCII
 
 Write-Step "Copying license and notice"

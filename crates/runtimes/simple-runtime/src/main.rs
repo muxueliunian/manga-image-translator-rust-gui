@@ -165,7 +165,7 @@ async fn async_main() {
         return;
     }
 
-    let _ = check_crate_version("frederik-uni/manga-image-translator-rust").await;
+    let _ = check_crate_version("muxueliunian/manga-image-translator-rust-gui").await;
 
     let models = Models::new(
         cli.max_batch_size_upscaler,

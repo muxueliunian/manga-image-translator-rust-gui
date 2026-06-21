@@ -2142,7 +2142,8 @@ svg {
   background: rgba(90, 157, 107, 0.16);
 }
 
-.gpu-download {
+.gpu-download,
+.gpu-driver-update {
   margin-top: var(--space-2);
 }
 
@@ -2164,6 +2165,90 @@ svg {
 .gpu-restart-actions {
   display: flex;
   gap: var(--space-2);
+}
+
+/* ── App update panel ── */
+.app-update {
+  margin-top: var(--space-3);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--line);
+}
+
+.app-update-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding: 4px var(--space-1);
+}
+
+.app-update-key {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.app-update-value {
+  color: var(--text);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  word-break: break-word;
+}
+
+.app-update-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+  margin-top: var(--space-2);
+}
+
+/* Push the primary action (download / install) to the trailing edge; the
+   release-notes link stays at the start of the row. */
+.app-update-actions .secondary-button {
+  margin-left: auto;
+}
+
+.app-update-notes {
+  margin-top: var(--space-2);
+  padding: var(--space-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface-muted);
+}
+
+.app-update-notes-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.app-update-notes-label {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.app-update-notes-preview {
+  margin: var(--space-1) 0 0;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.app-update-notes-body {
+  margin: var(--space-2) 0 0;
+  max-height: 180px;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--text);
 }
 
 /* ── Main-screen device banner (Auto-needs-DLL / Force-CUDA-unavailable) ── */

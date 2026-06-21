@@ -31,7 +31,7 @@ use crate::{
     prepare_renderer_assets, render_export_bytes_with_settings,
     settings::{Renderer, Settings},
     setup::{self, Models},
-    update::check_cuda_error,
+    update::{self, check_cuda_error},
 };
 
 const INDEX_HTML: &str = include_str!("../webview/index.html");
@@ -50,6 +50,7 @@ enum UserEvent {
     Progress(ProgressEvent),
     Log(LogEvent),
     Restart,
+    ExitForUpdate,
 }
 
 #[derive(Debug, Deserialize)]
@@ -84,6 +85,10 @@ enum IpcKind {
     GetGpuRuntimeStatus,
     DownloadCudaRuntime,
     RestartApp,
+    CheckAppUpdate,
+    DownloadAppUpdate,
+    InstallAppUpdate,
+    OpenExternal,
 }
 
 #[derive(Debug, Serialize)]
@@ -189,6 +194,11 @@ struct ReadImagePayload {
 #[derive(Deserialize)]
 struct RevealInExplorerPayload {
     path: PathBuf,
+}
+
+#[derive(Deserialize)]
+struct OpenExternalPayload {
+    url: String,
 }
 
 /// Persisted model-management config (`config/models.json`). Kept separate from
@@ -338,6 +348,10 @@ pub fn run() -> Result<()> {
                 }
                 *control_flow = ControlFlow::Exit;
             }
+            Event::UserEvent(UserEvent::ExitForUpdate) => {
+                save_window_state_from(&window);
+                *control_flow = ControlFlow::Exit;
+            }
             Event::WindowEvent {
                 event: WindowEvent::CloseRequested,
                 ..
@@ -441,6 +455,21 @@ fn handle_ipc_message(
 
     if matches!(request.kind, IpcKind::DownloadCudaRuntime) {
         handle_download_cuda_runtime(request, proxy.clone());
+        return;
+    }
+
+    if matches!(request.kind, IpcKind::CheckAppUpdate) {
+        handle_check_app_update(request, proxy.clone());
+        return;
+    }
+
+    if matches!(request.kind, IpcKind::DownloadAppUpdate) {
+        handle_download_app_update(request, proxy.clone());
+        return;
+    }
+
+    if matches!(request.kind, IpcKind::InstallAppUpdate) {
+        handle_install_app_update(request, proxy.clone());
         return;
     }
 
@@ -571,10 +600,19 @@ fn handle_ipc_request(request: &IpcRequest) -> Result<serde_json::Value> {
         }
         IpcKind::GetModelsStatus => Ok(build_models_status()),
         IpcKind::GetGpuRuntimeStatus => to_value(gpu_runtime::gpu_runtime_status()),
+        IpcKind::OpenExternal => {
+            let payload = serde_json::from_value::<OpenExternalPayload>(request.payload.clone())
+                .map_err(|err| anyhow!("Invalid openExternal payload: {err}"))?;
+            open_external_url(&payload.url)?;
+            to_value(serde_json::json!({ "url": payload.url }))
+        }
         IpcKind::StartTranslation
         | IpcKind::DownloadModels
         | IpcKind::DownloadCudaRuntime
-        | IpcKind::RestartApp => unreachable!("handled asynchronously"),
+        | IpcKind::RestartApp
+        | IpcKind::CheckAppUpdate
+        | IpcKind::DownloadAppUpdate
+        | IpcKind::InstallAppUpdate => unreachable!("handled asynchronously"),
     }
 }
 
@@ -714,6 +752,125 @@ fn handle_download_cuda_runtime(
             },
         };
         let _ = proxy.send_event(UserEvent::IpcResponse(response));
+    });
+}
+
+fn handle_check_app_update(request: IpcRequest, proxy: tao::event_loop::EventLoopProxy<UserEvent>) {
+    thread::spawn(move || {
+        let result = update::check_app_update().and_then(to_value);
+        let response = match result {
+            Ok(value) => IpcResponse {
+                id: request.id,
+                ok: true,
+                data: Some(value),
+                error: None,
+            },
+            Err(err) => IpcResponse::<serde_json::Value> {
+                id: request.id,
+                ok: false,
+                data: None,
+                error: Some(format!("{err:#}")),
+            },
+        };
+        let _ = proxy.send_event(UserEvent::IpcResponse(response));
+    });
+}
+
+fn handle_download_app_update(
+    request: IpcRequest,
+    proxy: tao::event_loop::EventLoopProxy<UserEvent>,
+) {
+    thread::spawn(move || {
+        let started = Instant::now();
+        let mut last_emit: Option<Instant> = None;
+        let result = update::download_app_update(|event| {
+            let now = Instant::now();
+            let done = event.total_bytes > 0 && event.downloaded >= event.total_bytes;
+            if !done {
+                if let Some(prev) = last_emit {
+                    if now.duration_since(prev) < Duration::from_millis(150) {
+                        return;
+                    }
+                }
+            }
+            last_emit = Some(now);
+            let percent = if event.total_bytes > 0 {
+                ((event.downloaded as f64 / event.total_bytes as f64) * 100.0)
+                    .round()
+                    .min(100.0) as u8
+            } else {
+                0
+            };
+            let elapsed = started.elapsed().as_secs_f64().max(0.001);
+            let speed = event.downloaded as f64 / elapsed;
+            let message = if event.total_bytes > 0 {
+                format!(
+                    "下载应用更新 {} · {} / {} · {}/s",
+                    event.asset_name,
+                    fmt_bytes(event.downloaded),
+                    fmt_bytes(event.total_bytes),
+                    fmt_bytes(speed as u64),
+                )
+            } else {
+                format!(
+                    "下载应用更新 {} · {} · {}/s",
+                    event.asset_name,
+                    fmt_bytes(event.downloaded),
+                    fmt_bytes(speed as u64),
+                )
+            };
+            let _ = proxy.send_event(UserEvent::Progress(ProgressEvent {
+                current: 1,
+                total: 1,
+                percent,
+                message,
+            }));
+        })
+        .and_then(to_value);
+
+        let response = match result {
+            Ok(value) => IpcResponse {
+                id: request.id,
+                ok: true,
+                data: Some(value),
+                error: None,
+            },
+            Err(err) => IpcResponse::<serde_json::Value> {
+                id: request.id,
+                ok: false,
+                data: None,
+                error: Some(format!("{err:#}")),
+            },
+        };
+        let _ = proxy.send_event(UserEvent::IpcResponse(response));
+    });
+}
+
+fn handle_install_app_update(
+    request: IpcRequest,
+    proxy: tao::event_loop::EventLoopProxy<UserEvent>,
+) {
+    thread::spawn(move || {
+        let result = update::install_app_update().and_then(to_value);
+        let ok = result.is_ok();
+        let response = match result {
+            Ok(value) => IpcResponse {
+                id: request.id,
+                ok: true,
+                data: Some(value),
+                error: None,
+            },
+            Err(err) => IpcResponse::<serde_json::Value> {
+                id: request.id,
+                ok: false,
+                data: None,
+                error: Some(format!("{err:#}")),
+            },
+        };
+        let _ = proxy.send_event(UserEvent::IpcResponse(response));
+        if ok {
+            let _ = proxy.send_event(UserEvent::ExitForUpdate);
+        }
     });
 }
 
@@ -1608,6 +1765,33 @@ fn reveal_in_explorer(path: &Path) -> Result<()> {
             path.parent().unwrap_or(path)
         };
         Command::new("xdg-open").arg(target).spawn()?;
+        return Ok(());
+    }
+}
+
+fn open_external_url(url: &str) -> Result<()> {
+    let trimmed = url.trim();
+    if !(trimmed.starts_with("https://") || trimmed.starts_with("http://")) {
+        return Err(anyhow!("Only http(s) URLs can be opened: {trimmed}"));
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        Command::new("rundll32.exe")
+            .args(["url.dll,FileProtocolHandler", trimmed])
+            .spawn()?;
+        return Ok(());
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        Command::new("open").arg(trimmed).spawn()?;
+        return Ok(());
+    }
+
+    #[cfg(all(unix, not(target_os = "macos")))]
+    {
+        Command::new("xdg-open").arg(trimmed).spawn()?;
         return Ok(());
     }
 }
