@@ -356,14 +356,14 @@ checksum = "4b46cbb362ab8752921c97e041f5e366ee6297bd428a31275b9fcf1e380f7299"
 
 [[package]]
 name = "anime4k"
-version = "0.12.2"
+version = "1.0.1"
 dependencies = [
  "anyhow",
  "async-trait",
- "base-util 0.12.2",
+ "base-util 1.0.1",
  "half",
  "interface-image",
- "interface-model 0.12.2",
+ "interface-model 1.0.1",
  "interface-upscaler",
  "maplit",
  "ndarray",
@@ -787,7 +787,7 @@ dependencies = [
 
 [[package]]
 name = "base-util"
-version = "0.12.2"
+version = "1.0.1"
 dependencies = [
  "anyhow",
  "log",
@@ -1192,13 +1192,13 @@ dependencies = [
 
 [[package]]
 name = "color"
-version = "0.12.2"
+version = "1.0.1"
 dependencies = [
  "anyhow",
  "async-trait",
  "interface-image",
  "interface-inpainter",
- "interface-model 0.12.2",
+ "interface-model 1.0.1",
  "ndarray",
  "ndarray-npy",
  "tokio",
@@ -1219,7 +1219,7 @@ checksum = "b05b61dc5112cbb17e4b6cd61790d9845d13888356391624cbe7e41efeac1e75"
 
 [[package]]
 name = "colorizer"
-version = "0.12.2"
+version = "1.0.1"
 
 [[package]]
 name = "combine"
@@ -1396,7 +1396,7 @@ dependencies = [
 
 [[package]]
 name = "craft"
-version = "0.12.2"
+version = "1.0.1"
 
 [[package]]
 name = "crc32fast"
@@ -1564,15 +1564,15 @@ dependencies = [
 
 [[package]]
 name = "ctc-48px"
-version = "0.12.2"
+version = "1.0.1"
 dependencies = [
  "anyhow",
  "async-trait",
- "base-util 0.12.2",
+ "base-util 1.0.1",
  "image",
  "interface-detector",
  "interface-image",
- "interface-model 0.12.2",
+ "interface-model 1.0.1",
  "interface-ocr",
  "maplit",
  "ndarray",
@@ -1587,15 +1587,15 @@ dependencies = [
 
 [[package]]
 name = "ctd"
-version = "0.12.2"
+version = "1.0.1"
 dependencies = [
  "anyhow",
  "async-trait",
- "base-util 0.12.2",
+ "base-util 1.0.1",
  "imageproc",
  "interface-detector",
  "interface-image",
- "interface-model 0.12.2",
+ "interface-model 1.0.1",
  "maplit",
  "ndarray",
  "opencv",
@@ -1671,16 +1671,16 @@ dependencies = [
 
 [[package]]
 name = "dbnet"
-version = "0.12.2"
+version = "1.0.1"
 dependencies = [
  "anyhow",
  "async-trait",
- "base-util 0.12.2",
+ "base-util 1.0.1",
  "criterion",
  "env_logger 0.11.8",
  "interface-detector",
  "interface-image",
- "interface-model 0.12.2",
+ "interface-model 1.0.1",
  "log",
  "maplit",
  "ndarray",
@@ -1706,7 +1706,7 @@ dependencies = [
 
 [[package]]
 name = "densecrf"
-version = "0.12.2"
+version = "1.0.1"
 dependencies = [
  "anyhow",
  "cc",
@@ -2092,14 +2092,14 @@ dependencies = [
 
 [[package]]
 name = "esrgan"
-version = "0.12.2"
+version = "1.0.1"
 dependencies = [
  "anyhow",
  "async-trait",
- "base-util 0.12.2",
+ "base-util 1.0.1",
  "half",
  "interface-image",
- "interface-model 0.12.2",
+ "interface-model 1.0.1",
  "interface-upscaler",
  "maplit",
  "ndarray",
@@ -2132,7 +2132,7 @@ dependencies = [
 
 [[package]]
 name = "export"
-version = "0.12.2"
+version = "1.0.1"
 dependencies = [
  "image",
  "interface-image",
@@ -2988,7 +2988,7 @@ dependencies = [
 
 [[package]]
 name = "html"
-version = "0.12.2"
+version = "1.0.1"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
@@ -3413,17 +3413,17 @@ checksum = "f4c7245a08504955605670dbf141fceab975f15ca21570696aebe9d2e71576bd"
 
 [[package]]
 name = "interface-detector"
-version = "0.12.2"
+version = "1.0.1"
 dependencies = [
  "anyhow",
  "approx",
  "async-trait",
- "base-util 0.12.2",
+ "base-util 1.0.1",
  "criterion",
  "geo",
  "image",
  "interface-image",
- "interface-model 0.12.2",
+ "interface-model 1.0.1",
  "log",
  "schemars",
  "serde",
@@ -3431,10 +3431,10 @@ dependencies = [
 
 [[package]]
 name = "interface-image"
-version = "0.12.2"
+version = "1.0.1"
 dependencies = [
  "anyhow",
- "base-util 0.12.2",
+ "base-util 1.0.1",
  "criterion",
  "fast_image_resize",
  "image",
@@ -3446,12 +3446,12 @@ dependencies = [
 
 [[package]]
 name = "interface-inpainter"
-version = "0.12.2"
+version = "1.0.1"
 dependencies = [
  "anyhow",
  "async-trait",
  "interface-image",
- "interface-model 0.12.2",
+ "interface-model 1.0.1",
 ]
 
 [[package]]
@@ -3475,11 +3475,11 @@ dependencies = [
 
 [[package]]
 name = "interface-model"
-version = "0.12.2"
+version = "1.0.1"
 dependencies = [
  "anyhow",
  "async-trait",
- "base-util 0.12.2",
+ "base-util 1.0.1",
  "env_logger 0.11.8",
  "flate2",
  "indicatif",
@@ -3494,7 +3494,7 @@ dependencies = [
 
 [[package]]
 name = "interface-ocr"
-version = "0.12.2"
+version = "1.0.1"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -3506,7 +3506,7 @@ dependencies = [
 
 [[package]]
 name = "interface-renderer"
-version = "0.12.2"
+version = "1.0.1"
 dependencies = [
  "anyhow",
  "interface-image",
@@ -3515,7 +3515,7 @@ dependencies = [
 
 [[package]]
 name = "interface-translator"
-version = "0.12.2"
+version = "1.0.1"
 dependencies = [
  "aio-translator",
  "schemars",
@@ -3525,11 +3525,11 @@ dependencies = [
 
 [[package]]
 name = "interface-upscaler"
-version = "0.12.2"
+version = "1.0.1"
 dependencies = [
  "anyhow",
  "async-trait",
- "base-util 0.12.2",
+ "base-util 1.0.1",
  "interface-image",
 ]
 
@@ -3747,7 +3747,7 @@ dependencies = [
 
 [[package]]
 name = "kumiko"
-version = "0.12.2"
+version = "1.0.1"
 dependencies = [
  "image",
  "itertools 0.14.0",
@@ -3757,14 +3757,14 @@ dependencies = [
 
 [[package]]
 name = "lama_aot"
-version = "0.12.2"
+version = "1.0.1"
 dependencies = [
  "anyhow",
  "async-trait",
- "base-util 0.12.2",
+ "base-util 1.0.1",
  "interface-image",
  "interface-inpainter",
- "interface-model 0.12.2",
+ "interface-model 1.0.1",
  "maplit",
  "ndarray",
  "ndarray-npy",
@@ -3776,14 +3776,14 @@ dependencies = [
 
 [[package]]
 name = "lama_large"
-version = "0.12.2"
+version = "1.0.1"
 dependencies = [
  "anyhow",
  "async-trait",
- "base-util 0.12.2",
+ "base-util 1.0.1",
  "interface-image",
  "interface-inpainter",
- "interface-model 0.12.2",
+ "interface-model 1.0.1",
  "maplit",
  "ndarray",
  "ndarray-npy",
@@ -3795,15 +3795,15 @@ dependencies = [
 
 [[package]]
 name = "lama_mpe"
-version = "0.12.2"
+version = "1.0.1"
 dependencies = [
  "anyhow",
  "async-trait",
- "base-util 0.12.2",
+ "base-util 1.0.1",
  "fast_image_resize",
  "interface-image",
  "interface-inpainter",
- "interface-model 0.12.2",
+ "interface-model 1.0.1",
  "maplit",
  "ndarray",
  "ndarray-npy",
@@ -3937,7 +3937,7 @@ dependencies = [
 
 [[package]]
 name = "lsb"
-version = "0.12.2"
+version = "1.0.1"
 dependencies = [
  "image",
  "stego",
@@ -3951,15 +3951,15 @@ checksum = "c41e0c4fef86961ac6d6f8a82609f55f31b05e4fce149ac5710e439df7619ba4"
 
 [[package]]
 name = "manga-ocr"
-version = "0.12.2"
+version = "1.0.1"
 dependencies = [
  "anyhow",
  "async-trait",
- "base-util 0.12.2",
+ "base-util 1.0.1",
  "image",
  "interface-detector",
  "interface-image",
- "interface-model 0.12.2",
+ "interface-model 1.0.1",
  "interface-ocr",
  "maplit",
  "ndarray",
@@ -4000,11 +4000,11 @@ dependencies = [
 
 [[package]]
 name = "mask-refinement"
-version = "0.12.2"
+version = "1.0.1"
 dependencies = [
  "anyhow",
  "argminmax",
- "base-util 0.12.2",
+ "base-util 1.0.1",
  "densecrf",
  "geo",
  "interface-detector",
@@ -4159,15 +4159,15 @@ dependencies = [
 
 [[package]]
 name = "native"
-version = "0.12.2"
+version = "1.0.1"
 dependencies = [
  "anyhow",
  "async-trait",
- "base-util 0.12.2",
+ "base-util 1.0.1",
  "image",
  "interface-detector",
  "interface-image",
- "interface-model 0.12.2",
+ "interface-model 1.0.1",
  "interface-ocr",
  "parking_lot",
  "tokio",
@@ -4648,15 +4648,15 @@ dependencies = [
 
 [[package]]
 name = "ocr-48px"
-version = "0.12.2"
+version = "1.0.1"
 dependencies = [
  "anyhow",
  "async-trait",
- "base-util 0.12.2",
+ "base-util 1.0.1",
  "image",
  "interface-detector",
  "interface-image",
- "interface-model 0.12.2",
+ "interface-model 1.0.1",
  "interface-ocr",
  "maplit",
  "ndarray",
@@ -4848,16 +4848,16 @@ dependencies = [
 
 [[package]]
 name = "paddle"
-version = "0.12.2"
+version = "1.0.1"
 dependencies = [
  "anyhow",
  "async-trait",
- "base-util 0.12.2",
+ "base-util 1.0.1",
  "criterion",
  "geo",
  "interface-detector",
  "interface-image",
- "interface-model 0.12.2",
+ "interface-model 1.0.1",
  "maplit",
  "ort",
  "ort-parallel",
@@ -5204,19 +5204,6 @@ dependencies = [
 
 [[package]]
 name = "png"
-version = "0.12.2"
-dependencies = [
- "anyhow",
- "cosmic-text",
- "env_logger 0.11.8",
- "export",
- "interface-image",
- "opencv",
- "ordered-float",
-]
-
-[[package]]
-name = "png"
 version = "0.18.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "97baced388464909d42d89643fe4361939af9b7ce7a31ee32a168f832a70f2a0"
@@ -5226,6 +5213,19 @@ dependencies = [
  "fdeflate",
  "flate2",
  "miniz_oxide",
+]
+
+[[package]]
+name = "png"
+version = "1.0.1"
+dependencies = [
+ "anyhow",
+ "cosmic-text",
+ "env_logger 0.11.8",
+ "export",
+ "interface-image",
+ "opencv",
+ "ordered-float",
 ]
 
 [[package]]
@@ -5843,7 +5843,7 @@ dependencies = [
 
 [[package]]
 name = "rexiv"
-version = "0.12.2"
+version = "1.0.1"
 dependencies = [
  "rexiv2",
 ]
@@ -6078,15 +6078,15 @@ checksum = "b39cdef0fa800fc44525c84ccb54a029961a8215f9619753635a9c0d2538d46d"
 
 [[package]]
 name = "rusty-manga-image-translator"
-version = "0.12.2"
+version = "1.0.1"
 dependencies = [
  "anyhow",
- "base-util 0.12.2",
+ "base-util 1.0.1",
  "ctd",
  "dbnet",
  "interface-detector",
  "interface-image",
- "interface-model 0.12.2",
+ "interface-model 1.0.1",
  "interface-ocr",
  "interface-translator",
  "numpy",
@@ -6473,13 +6473,13 @@ dependencies = [
 
 [[package]]
 name = "simple-runtime"
-version = "0.12.2"
+version = "1.0.1"
 dependencies = [
  "ab_glyph",
  "anime4k",
  "anyhow",
  "async-scoped",
- "base-util 0.12.2",
+ "base-util 1.0.1",
  "clap 4.5.48",
  "config",
  "ctc-48px",
@@ -6494,7 +6494,7 @@ dependencies = [
  "interface-detector",
  "interface-image",
  "interface-inpainter",
- "interface-model 0.12.2",
+ "interface-model 1.0.1",
  "interface-ocr",
  "interface-translator",
  "interface-upscaler",
@@ -6510,7 +6510,7 @@ dependencies = [
  "ort",
  "paddle",
  "parking_lot",
- "png 0.12.2",
+ "png 1.0.1",
  "regex",
  "reqwest",
  "rfd",
@@ -7031,15 +7031,15 @@ dependencies = [
 
 [[package]]
 name = "tesseract"
-version = "0.12.2"
+version = "1.0.1"
 dependencies = [
  "anyhow",
  "async-trait",
- "base-util 0.12.2",
+ "base-util 1.0.1",
  "image",
  "interface-detector",
  "interface-image",
- "interface-model 0.12.2",
+ "interface-model 1.0.1",
  "interface-ocr",
  "parking_lot",
  "tokio",
@@ -7049,7 +7049,7 @@ dependencies = [
 
 [[package]]
 name = "textline-merge"
-version = "0.12.2"
+version = "1.0.1"
 dependencies = [
  "anyhow",
  "geo",
@@ -7724,11 +7724,11 @@ checksum = "06abde3611657adf66d383f00b093d7faecc7fa57071cce2578660c9f1010821"
 
 [[package]]
 name = "util"
-version = "0.12.2"
+version = "1.0.1"
 dependencies = [
  "anyhow",
  "async-scoped",
- "base-util 0.12.2",
+ "base-util 1.0.1",
  "clipper2",
  "clipper2c-sys",
  "criterion",
@@ -7810,13 +7810,13 @@ checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
 
 [[package]]
 name = "waifu2x"
-version = "0.12.2"
+version = "1.0.1"
 dependencies = [
  "anyhow",
  "async-trait",
- "base-util 0.12.2",
+ "base-util 1.0.1",
  "interface-image",
- "interface-model 0.12.2",
+ "interface-model 1.0.1",
  "interface-upscaler",
  "maplit",
  "ndarray",

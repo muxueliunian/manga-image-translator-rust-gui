@@ -50,13 +50,16 @@ const i18n = {
     gpuRecNeedDll: "检测到可用显卡，下载 CUDA 运行时即可启用 GPU 加速。",
     gpuRecReady: "GPU 加速已就绪。",
     gpuDownloadBtn: "下载 CUDA 运行时（约 0.9 GB）",
+    gpuDriverUpdateBtn: "前往 NVIDIA 驱动下载页",
     gpuDownloading: "下载中…",
     gpuRefresh: "重新检测",
     gpuRestartReady: "CUDA 运行时已安装，重启应用后生效。",
     gpuRestartNow: "立即重启",
     gpuRestartLater: "稍后",
     deviceBannerAutoNeedDll: "检测到可用 GPU。下载 CUDA 运行时即可启用加速。",
+    deviceBannerAutoDriverOld: "检测到 NVIDIA 显卡，但驱动过旧（需 ≥ {min}）。更新驱动后即可启用 GPU 加速，当前回退 CPU。",
     deviceBannerCudaUnavailable: "已选「强制 CUDA」，但 CUDA 当前不可用，翻译会直接报错。",
+    deviceBannerCudaDriverOld: "已选「强制 CUDA」，但 NVIDIA 驱动过旧（需 ≥ {min}），翻译会直接报错。请先更新驱动。",
     deviceBannerOpen: "前往 GPU 设置",
     debugMode: "调试输出",
     debugModeHint:
@@ -227,6 +230,27 @@ const i18n = {
     statusPartial: "部分完成",
     ipcUnavailable: "IPC 未连接",
     backendReady: "后端已连接",
+    updateBtn: "检查更新",
+    updateTitle: "应用更新",
+    updateCheck: "检查更新",
+    updateChecking: "正在检查更新…",
+    updateCurrentVersion: "当前版本",
+    updateLatestVersion: "最新版本",
+    updateUpToDate: "已是最新版本。",
+    updateAvailable: "发现新版本 {version}。",
+    updateNoCompatibleAsset: "发现新版本，但没有当前构建可用的便携包。",
+    updateCheckFailed: "检查更新失败：{err}",
+    updateViewNotes: "查看发布说明",
+    updateReleaseNotes: "发布说明",
+    updateAssetSize: "下载大小",
+    updateDownloadBtn: "下载更新",
+    updateDownloading: "正在下载更新…",
+    updateStaged: "更新已下载，准备安装。",
+    updateInstallBtn: "安装并重启",
+    updateInstalling: "正在重启以完成更新…",
+    updateDownloadFailed: "下载更新失败：{err}",
+    updateInstallFailed: "启动安装失败：{err}",
+    updateLinkCopied: "链接已复制",
   },
   en: {
     title: "Manga Image Translator",
@@ -279,13 +303,16 @@ const i18n = {
     gpuRecNeedDll: "GPU detected. Download the CUDA runtime to enable acceleration.",
     gpuRecReady: "GPU acceleration is ready.",
     gpuDownloadBtn: "Download CUDA runtime (~0.9 GB)",
+    gpuDriverUpdateBtn: "Open NVIDIA driver downloads",
     gpuDownloading: "Downloading…",
     gpuRefresh: "Re-check",
     gpuRestartReady: "CUDA runtime installed. Restart the app to take effect.",
     gpuRestartNow: "Restart now",
     gpuRestartLater: "Later",
     deviceBannerAutoNeedDll: "A usable GPU was detected. Download the CUDA runtime to enable acceleration.",
+    deviceBannerAutoDriverOld: "An NVIDIA GPU was detected, but its driver is too old (needs ≥ {min}). Update the driver to enable GPU acceleration; falling back to CPU for now.",
     deviceBannerCudaUnavailable: "“Force CUDA” is selected, but CUDA is currently unavailable — translation will fail.",
+    deviceBannerCudaDriverOld: "“Force CUDA” is selected, but the NVIDIA driver is too old (needs ≥ {min}) — translation will fail. Update the driver first.",
     deviceBannerOpen: "Open GPU settings",
     debugMode: "Debug dump",
     debugModeHint:
@@ -456,6 +483,27 @@ const i18n = {
     statusPartial: "Partial",
     ipcUnavailable: "IPC unavailable",
     backendReady: "Backend ready",
+    updateBtn: "Check for Updates",
+    updateTitle: "App Update",
+    updateCheck: "Check for updates",
+    updateChecking: "Checking for updates…",
+    updateCurrentVersion: "Current version",
+    updateLatestVersion: "Latest version",
+    updateUpToDate: "You're on the latest version.",
+    updateAvailable: "A new version {version} is available.",
+    updateNoCompatibleAsset: "A new version is available, but no portable package matches this build.",
+    updateCheckFailed: "Update check failed: {err}",
+    updateViewNotes: "View release notes",
+    updateReleaseNotes: "Release notes",
+    updateAssetSize: "Download size",
+    updateDownloadBtn: "Download update",
+    updateDownloading: "Downloading update…",
+    updateStaged: "Update downloaded, ready to install.",
+    updateInstallBtn: "Install and restart",
+    updateInstalling: "Restarting to finish the update…",
+    updateDownloadFailed: "Update download failed: {err}",
+    updateInstallFailed: "Failed to start installer: {err}",
+    updateLinkCopied: "Link copied",
   },
 };
 
@@ -526,6 +574,10 @@ const state = {
   isRunning: false,
   cudaErrorExpanded: false,
   gpuStatus: null,
+  appVersion: "",
+  // App self-update panel. status drives the rendered branch:
+  // idle | checking | uptodate | available | error | downloading | staged | installing
+  update: { status: "idle", info: null, staged: null, error: "", notesExpanded: false },
 };
 
 const els = {
@@ -605,6 +657,8 @@ const els = {
   loadConfig: document.getElementById("loadConfig"),
   saveConfig: document.getElementById("saveConfig"),
   openModels: document.getElementById("openModels"),
+  openUpdate: document.getElementById("openUpdate"),
+  appUpdate: document.getElementById("appUpdate"),
   modelsModal: document.getElementById("modelsModal"),
   closeModels: document.getElementById("closeModels"),
   modelDir: document.getElementById("modelDir"),
@@ -701,14 +755,20 @@ function updateDeviceBanner() {
     return;
   }
   const mode = getDeviceMode();
+  const driverOld = status.recommendation === "need_driver_update";
   let tone;
   let msgKey;
   if (mode === "cuda") {
     tone = "error";
-    msgKey = "deviceBannerCudaUnavailable";
+    msgKey = driverOld
+      ? "deviceBannerCudaDriverOld"
+      : "deviceBannerCudaUnavailable";
   } else if (mode === "auto" && status.recommendation === "need_download_dll") {
     tone = "warn";
     msgKey = "deviceBannerAutoNeedDll";
+  } else if (mode === "auto" && driverOld) {
+    tone = "warn";
+    msgKey = "deviceBannerAutoDriverOld";
   } else {
     return;
   }
@@ -842,6 +902,7 @@ function applyLang() {
   renderResults();
   renderCanvas();
   renderLogEmptyState();
+  renderAppUpdate();
   refreshGuidance();
 }
 
@@ -2544,6 +2605,16 @@ function renderGpuRuntime(status) {
     btn.dataset.gpuDownload = "1";
     btn.textContent = t("gpuDownloadBtn");
     el.appendChild(btn);
+  } else if (status.recommendation === "need_driver_update") {
+    // Drivers can't be bundled or downloaded by us; point the user to NVIDIA's
+    // official driver page instead of letting them fetch the ~0.9 GB runtime in
+    // vain (an old driver can't load the CUDA 12 runtime even once present).
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "secondary-button gpu-driver-update";
+    btn.dataset.gpuDriverUpdate = "1";
+    btn.textContent = t("gpuDriverUpdateBtn");
+    el.appendChild(btn);
   }
 
   updateDeviceBanner();
@@ -2600,6 +2671,295 @@ async function triggerRestart() {
     await invoke("restartApp");
   } catch (err) {
     addLog("error", err.message);
+  }
+}
+
+// ── App self-update panel ──────────────────────────────────────────────
+// All network/download work happens in the Rust backend via the
+// checkAppUpdate / downloadAppUpdate / installAppUpdate IPCs; the frontend
+// only reflects state. Download progress streams through the shared
+// ProgressEvent into the status strip/log, same as model/GPU downloads.
+
+const UPDATE_REC_TONE = {
+  checking: "info",
+  uptodate: "ok",
+  available: "warn",
+  error: "warn",
+  downloading: "info",
+  staged: "ok",
+  installing: "info",
+};
+
+function formatBytes(bytes) {
+  const n = Number(bytes);
+  if (!Number.isFinite(n) || n <= 0) return "—";
+  const units = ["B", "KB", "MB", "GB"];
+  let value = n;
+  let unit = 0;
+  while (value >= 1024 && unit < units.length - 1) {
+    value /= 1024;
+    unit += 1;
+  }
+  const rounded = value >= 10 || unit === 0 ? Math.round(value) : value.toFixed(1);
+  return `${rounded} ${units[unit]}`;
+}
+
+function formatUpdateDate(iso) {
+  if (!iso) return "";
+  const date = new Date(iso);
+  return Number.isNaN(date.getTime()) ? "" : date.toLocaleDateString();
+}
+
+function updateBannerText() {
+  const u = state.update;
+  switch (u.status) {
+    case "checking":
+      return t("updateChecking");
+    case "uptodate":
+      return t("updateUpToDate");
+    case "available":
+      if (u.info && !u.info.assetName) return t("updateNoCompatibleAsset");
+      return t("updateAvailable", {
+        version: u.info?.latestVersion || u.info?.tagName || "",
+      });
+    case "error":
+      return t("updateCheckFailed", { err: u.error || "" });
+    case "downloading":
+      return t("updateDownloading");
+    case "staged":
+      return t("updateStaged");
+    case "installing":
+      return t("updateInstalling");
+    default:
+      return "";
+  }
+}
+
+function updateInfoRow(label, value) {
+  const row = document.createElement("div");
+  row.className = "app-update-row";
+  const key = document.createElement("span");
+  key.className = "app-update-key";
+  key.textContent = label;
+  const val = document.createElement("span");
+  val.className = "app-update-value";
+  val.textContent = value;
+  row.append(key, val);
+  return row;
+}
+
+function stagedMatchesInfo(staged, info) {
+  if (!staged || !info) return false;
+  const stagedTag = staged.tagName || "";
+  const infoTag = info.tagName || "";
+  const stagedVersion = staged.latestVersion || "";
+  const infoVersion = info.latestVersion || "";
+  return Boolean(
+    (stagedTag && infoTag && stagedTag === infoTag) ||
+      (stagedVersion && infoVersion && stagedVersion === infoVersion),
+  );
+}
+
+function renderAppUpdate() {
+  const el = els.appUpdate;
+  if (!el) return;
+  el.innerHTML = "";
+  const u = state.update;
+  const busy =
+    u.status === "checking" || u.status === "downloading" || u.status === "installing";
+
+  // Header: title + re-check button (always available as the entry point).
+  const head = document.createElement("div");
+  head.className = "models-status-head";
+  const title = document.createElement("span");
+  title.className = "models-status-title";
+  title.textContent = t("updateTitle");
+  head.appendChild(title);
+  const actions = document.createElement("div");
+  actions.className = "models-status-actions";
+  const checkBtn = document.createElement("button");
+  checkBtn.type = "button";
+  checkBtn.className = "ghost-button";
+  checkBtn.dataset.updateCheck = "1";
+  checkBtn.disabled = busy;
+  checkBtn.textContent = u.status === "checking" ? t("updateChecking") : t("updateCheck");
+  actions.appendChild(checkBtn);
+  head.appendChild(actions);
+  el.appendChild(head);
+
+  // Version readout.
+  const currentVersion = u.info?.currentVersion || state.appVersion || "—";
+  el.appendChild(updateInfoRow(t("updateCurrentVersion"), currentVersion));
+
+  const showLatest =
+    u.info &&
+    (u.status === "available" ||
+      u.status === "downloading" ||
+      u.status === "staged" ||
+      u.status === "installing" ||
+      u.status === "uptodate");
+  if (showLatest) {
+    const latest = u.info.latestVersion || u.info.tagName || "—";
+    const date = formatUpdateDate(u.info.publishedAt);
+    el.appendChild(updateInfoRow(t("updateLatestVersion"), date ? `${latest} · ${date}` : latest));
+    if (u.info.assetSize && u.status !== "uptodate") {
+      el.appendChild(updateInfoRow(t("updateAssetSize"), formatBytes(u.info.assetSize)));
+    }
+  }
+
+  // Status banner (reuses the GPU recommendation tones).
+  const bannerText = updateBannerText();
+  if (bannerText) {
+    const rec = document.createElement("div");
+    rec.className = `gpu-rec gpu-rec-${UPDATE_REC_TONE[u.status] || "info"}`;
+    rec.textContent = bannerText;
+    el.appendChild(rec);
+  }
+
+  // Action row + release notes, for any state where an update exists.
+  const hasUpdate =
+    u.info &&
+    (u.status === "available" || u.status === "downloading" || u.status === "staged");
+  if (hasUpdate) {
+    const actionRow = document.createElement("div");
+    actionRow.className = "app-update-actions";
+    if (u.info.htmlUrl) {
+      const link = document.createElement("button");
+      link.type = "button";
+      link.className = "link-button";
+      link.dataset.updateNotesLink = u.info.htmlUrl;
+      link.textContent = t("updateViewNotes");
+      actionRow.appendChild(link);
+    }
+    if (u.status === "staged") {
+      const install = document.createElement("button");
+      install.type = "button";
+      install.className = "secondary-button";
+      install.dataset.updateInstall = "1";
+      install.textContent = t("updateInstallBtn");
+      actionRow.appendChild(install);
+    } else if (u.info.assetName) {
+      const download = document.createElement("button");
+      download.type = "button";
+      download.className = "secondary-button";
+      download.dataset.updateDownload = "1";
+      download.disabled = u.status === "downloading";
+      download.textContent =
+        u.status === "downloading" ? t("updateDownloading") : t("updateDownloadBtn");
+      actionRow.appendChild(download);
+    }
+    el.appendChild(actionRow);
+
+    const body = (u.info.body || "").trim();
+    if (body) {
+      const notes = document.createElement("div");
+      notes.className = "app-update-notes";
+      const notesHead = document.createElement("div");
+      notesHead.className = "app-update-notes-head";
+      const notesLabel = document.createElement("span");
+      notesLabel.className = "app-update-notes-label";
+      notesLabel.textContent = t("updateReleaseNotes");
+      const toggle = document.createElement("button");
+      toggle.type = "button";
+      toggle.className = "link-button";
+      toggle.dataset.updateNotesToggle = "1";
+      toggle.textContent = u.notesExpanded ? t("collapse") : t("expand");
+      notesHead.append(notesLabel, toggle);
+      notes.appendChild(notesHead);
+      if (u.notesExpanded) {
+        const pre = document.createElement("pre");
+        pre.className = "app-update-notes-body";
+        pre.textContent = body;
+        notes.appendChild(pre);
+      } else {
+        const preview = document.createElement("p");
+        preview.className = "app-update-notes-preview";
+        preview.textContent = summarizeText(body, 160);
+        notes.appendChild(preview);
+      }
+      el.appendChild(notes);
+    }
+  }
+}
+
+async function checkUpdateFlow() {
+  if (
+    state.update.status === "checking" ||
+    state.update.status === "downloading" ||
+    state.update.status === "installing"
+  ) {
+    return;
+  }
+  state.update.status = "checking";
+  state.update.error = "";
+  renderAppUpdate();
+  try {
+    const info = await invoke("checkAppUpdate");
+    state.update.info = info || null;
+    if (info?.currentVersion) state.appVersion = info.currentVersion;
+    if (info?.updateAvailable && stagedMatchesInfo(state.update.staged, info)) {
+      state.update.status = "staged";
+    } else {
+      state.update.status = info?.updateAvailable ? "available" : "uptodate";
+      if (!info?.updateAvailable) state.update.staged = null;
+    }
+    state.update.notesExpanded = false;
+  } catch (err) {
+    state.update.status = "error";
+    state.update.error = summarizeText(err.message, 120);
+    addLog("error", t("updateCheckFailed", { err: err.message }));
+  }
+  renderAppUpdate();
+}
+
+async function downloadUpdateFlow() {
+  if (state.update.status === "downloading") return;
+  state.update.status = "downloading";
+  renderAppUpdate();
+  try {
+    const staged = await invoke("downloadAppUpdate");
+    state.update.staged = staged || null;
+    state.update.status = "staged";
+    addLog("success", t("updateStaged"));
+  } catch (err) {
+    // Fall back to the "available" state so the user can retry.
+    state.update.status = "available";
+    addLog("error", t("updateDownloadFailed", { err: err.message }));
+  }
+  renderAppUpdate();
+}
+
+async function installUpdateFlow() {
+  if (state.update.status === "installing") return;
+  state.update.status = "installing";
+  renderAppUpdate();
+  try {
+    // On success the backend launches the external updater and exits/relaunches
+    // the app, so there is nothing more to do here — stay in the installing state.
+    await invoke("installAppUpdate");
+  } catch (err) {
+    state.update.status = "staged";
+    addLog("error", t("updateInstallFailed", { err: err.message }));
+    renderAppUpdate();
+  }
+}
+
+// Release link opens in the system browser via the backend openExternal IPC.
+// That IPC is optional: if the backend doesn't implement it the request never
+// resolves (unknown kinds are dropped, not rejected), so we time-box the call
+// and degrade to copying the URL to the clipboard.
+async function openReleaseNotes(url) {
+  if (!url) return;
+  try {
+    await Promise.race([
+      invoke("openExternal", { url }),
+      new Promise((_, reject) =>
+        setTimeout(() => reject(new Error("openExternal unavailable")), 1500),
+      ),
+    ]);
+  } catch (_) {
+    const ok = await copyText(url);
+    if (ok) addLog("info", `${t("updateLinkCopied")}: ${url}`);
   }
 }
 
@@ -2739,6 +3099,10 @@ async function bootstrap() {
       downloadCudaRuntimeFlow(dl);
       return;
     }
+    if (event.target.closest("[data-gpu-driver-update]")) {
+      openReleaseNotes("https://www.nvidia.com/Download/index.aspx");
+      return;
+    }
     if (event.target.closest("[data-gpu-refresh]")) {
       refreshGpuRuntime();
       return;
@@ -2749,6 +3113,34 @@ async function bootstrap() {
     }
     if (event.target.closest("[data-gpu-restart-cancel]")) {
       refreshGpuRuntime();
+    }
+  });
+  els.openUpdate.addEventListener("click", async () => {
+    await openModelsModal();
+    els.appUpdate?.scrollIntoView({ block: "nearest" });
+    checkUpdateFlow();
+  });
+  els.appUpdate.addEventListener("click", (event) => {
+    if (event.target.closest("[data-update-check]")) {
+      checkUpdateFlow();
+      return;
+    }
+    if (event.target.closest("[data-update-download]")) {
+      downloadUpdateFlow();
+      return;
+    }
+    if (event.target.closest("[data-update-install]")) {
+      installUpdateFlow();
+      return;
+    }
+    const link = event.target.closest("[data-update-notes-link]");
+    if (link) {
+      openReleaseNotes(link.dataset.updateNotesLink);
+      return;
+    }
+    if (event.target.closest("[data-update-notes-toggle]")) {
+      state.update.notesExpanded = !state.update.notesExpanded;
+      renderAppUpdate();
     }
   });
   els.modelsModal.addEventListener("click", (event) => {
@@ -2930,6 +3322,8 @@ async function bootstrap() {
     const ready = await invoke("appReady");
     const diagnostics = ready.diagnostics || {};
     els.backendBadge.textContent = `${ready.backend} / ${ready.platform}`;
+    state.appVersion = ready.version || "";
+    renderAppUpdate();
     updateProviderStatus(diagnostics.provider_status || "CUDA unknown");
     updateCudaError(diagnostics);
     addLog("success", `${t("backendReady")}: ${ready.version}`);
