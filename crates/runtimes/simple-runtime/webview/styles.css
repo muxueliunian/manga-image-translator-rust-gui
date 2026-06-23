@@ -1273,11 +1273,42 @@ svg {
 /* ── Canvas (visual focus) ── */
 /* Center column: collapsible preview · resizer · progress strip · terminal. */
 .canvas {
+  position: relative;
   display: grid;
   grid-template-rows: var(--preview-height, 300px) 6px auto minmax(0, 1fr);
   min-width: 0;
   min-height: 0;
   background: var(--bg);
+}
+
+/* Floating P5 edit toolbar, pinned to the top-right of the preview stage. */
+.canvas-edit-bar {
+  position: absolute;
+  top: var(--space-3);
+  right: var(--space-3);
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 4px 6px;
+  border-radius: var(--radius-2);
+  background: color-mix(in srgb, var(--surface) 86%, transparent);
+  border: 1px solid var(--border);
+  backdrop-filter: blur(6px);
+  box-shadow: var(--shadow-1);
+}
+
+.canvas-edit-hint {
+  font-size: 12px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+/* `.ghost-button { display }` would otherwise beat the UA `[hidden]` rule, so
+   hidden controls inside the edit bar stay visible. Force them off. */
+.canvas-edit-bar[hidden],
+.canvas-edit-bar [hidden] {
+  display: none !important;
 }
 
 .canvas.preview-collapsed {
@@ -2305,14 +2336,83 @@ svg {
   cursor: grabbing;
 }
 
-.canvas-img {
+/* Transform target: holds the image and (in edit mode) the SVG overlay so they
+   pan/zoom as one. transform-origin 0 0 keeps the screen<->image mapping linear. */
+.canvas-content {
   position: absolute;
   top: 0;
   left: 0;
   transform-origin: 0 0;
+  will-change: transform;
+}
+
+.canvas-img {
+  position: absolute;
+  top: 0;
+  left: 0;
   user-select: none;
   -webkit-user-drag: none;
-  will-change: transform;
+}
+
+/* HTML overlay layer in image-pixel space (size set inline = image size). It is
+   click-through; only the boxes capture pointer events so empty areas still pan. */
+.canvas-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  overflow: visible;
+  pointer-events: none;
+}
+
+/* One transparent box per text region (image-pixel space). A thin outline marks
+   it as selectable/draggable over the exact baked image; the manga shows through. */
+.overlay-box {
+  position: absolute;
+  box-sizing: border-box;
+  pointer-events: all;
+  cursor: move;
+  outline: 1px dashed rgba(204, 120, 92, 0.7);
+  outline-offset: 0;
+  transition: outline-color 120ms ease, background 120ms ease;
+}
+
+.overlay-box:hover {
+  background: rgba(204, 120, 92, 0.12);
+}
+
+.overlay-box.is-selected {
+  outline: 2px solid var(--accent-strong);
+  background: rgba(204, 120, 92, 0.14);
+}
+
+.overlay-box.is-editing {
+  outline: 2px solid var(--accent-strong);
+}
+
+/* In-place text editor: floats over the box in screen space. Its background is
+   the text-free manga clip for this region (set in JS), so the user sees clean
+   art behind what they type — no solid box, no old baked text. Uses `outline`
+   (not border) so the box size matches the region exactly and the bg clip aligns.
+   On commit the canvas refreshes with the exact re-rendered PNG. */
+.overlay-editor {
+  position: absolute;
+  z-index: 6;
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  border: none;
+  outline: 2px solid var(--accent-strong);
+  background-color: transparent;
+  background-repeat: no-repeat;
+  background-clip: border-box;
+  color: #000;
+  font-family: "Microsoft YaHei", "PingFang SC", "Hiragino Sans GB",
+    "Noto Sans CJK SC", "MS Gothic", "Segoe UI", sans-serif;
+  line-height: 1.2;
+  text-align: center;
+  resize: none;
+  overflow: hidden;
+  box-shadow: var(--shadow-1);
 }
 
 /* Narrow windows (min 960): collapse the inspector to keep the canvas usable. */

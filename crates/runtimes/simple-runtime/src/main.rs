@@ -63,6 +63,12 @@ pub fn render_export_to_png_bytes_with_direction(
             ..PngRenderConfig::default()
         },
     );
+    raw_image_to_png_bytes(&img)
+}
+
+/// Encode a decoded `RawImage` (1/3/4 channel, 8-bit) to PNG bytes. Shared by the
+/// final-render path and the P5 editing background preview.
+pub fn raw_image_to_png_bytes(img: &interface_image::RawImage) -> anyhow::Result<Vec<u8>> {
     let mut data = Vec::new();
     let color = match img.channels {
         4 => ExtendedColorType::Rgba8,

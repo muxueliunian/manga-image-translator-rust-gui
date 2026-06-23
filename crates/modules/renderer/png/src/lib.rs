@@ -65,6 +65,19 @@ pub enum MyAlign {
     Right,
 }
 
+/// The inpainted background with **all text removed**, before any translated text
+/// is composited. P5 editing uses this as the base layer so edited text shown as an
+/// SVG overlay isn't doubled up with the baked-in typeset text. Mirrors the first
+/// three steps of [`PngRenderer::render`] (get image → normalize → apply overlay)
+/// but stops short of drawing any block.
+pub fn background_image(exp: &Export) -> RawImage {
+    let mut img = exp.get_image();
+    normalize_color_image(&mut img);
+    let overlay = exp.get_overlay();
+    apply_inpaint_overlay(&mut img, &overlay);
+    img
+}
+
 impl PngRenderer {
     pub fn render(&mut self, exp: Export, config: PngRenderConfig) -> RawImage {
         let mut img = exp.get_image();

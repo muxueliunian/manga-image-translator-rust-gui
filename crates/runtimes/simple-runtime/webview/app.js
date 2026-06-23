@@ -185,6 +185,12 @@ const i18n = {
     resultTitle: "预览与导出",
     completedTitle: "已完成翻译",
     previewHint: "单击左侧条目预览图片。",
+    editEnter: "编辑嵌字",
+    editExit: "完成编辑",
+    editHintIdle: "点选文字框：双击改字 · 拖动挪位",
+    editEntered: "已进入编辑模式",
+    editApplied: "已更新嵌字",
+    editFailed: "编辑失败",
     resultStatsEmpty: "暂无结果",
     resultStats: "完成 {done} · 失败 {failed} · 跳过 {skipped}",
     resultEmpty: "暂无结果。完成翻译后可预览图片，并选择导出到指定目录。",
@@ -438,6 +444,12 @@ const i18n = {
     resultTitle: "Preview and Export",
     completedTitle: "Completed",
     previewHint: "Click an item on the left to preview.",
+    editEnter: "Edit Text",
+    editExit: "Done",
+    editHintIdle: "Click a box: double-click to edit · drag to move",
+    editEntered: "Edit mode on",
+    editApplied: "Typeset updated",
+    editFailed: "Edit failed",
     resultStatsEmpty: "No results",
     resultStats: "Done {done} · Failed {failed} · Skipped {skipped}",
     resultEmpty: "No results yet. Finished images can be previewed and exported after translation.",
@@ -568,6 +580,13 @@ const state = {
   outputDir: "",
   results: [],
   selectedResults: new Set(),
+  // P5 editable typeset. editData = { path, width, height, regions }; canvasView is
+  // the live pan/zoom transform of the current preview (for screen<->image mapping).
+  editMode: false,
+  editData: null,
+  editSelected: null,
+  editEditor: null,
+  canvasView: null,
   settings: null,
   requestId: 0,
   pending: new Map(),
@@ -677,6 +696,10 @@ const els = {
   filmstripResults: document.getElementById("filmstripResults"),
   results: document.getElementById("results"),
   canvasStage: document.getElementById("canvasStage"),
+  canvasEditBar: document.getElementById("canvasEditBar"),
+  toggleEdit: document.getElementById("toggleEdit"),
+  exitEdit: document.getElementById("exitEdit"),
+  editHint: document.getElementById("editHint"),
   filmstripResizer: document.getElementById("filmstripResizer"),
   resultsResizer: document.getElementById("resultsResizer"),
   logList: document.getElementById("logList"),
@@ -1922,13 +1945,20 @@ async function startTranslation() {
 // left panel now (P3d), so the canvas is dedicated to the pan/zoom viewer.
 function renderCanvas() {
   const stage = els.canvasStage;
+  // Switching preview away from the image being edited drops edit mode.
+  if (state.editMode && (!state.editData || state.editData.path !== state.preview)) {
+    exitEditMode({ silent: true });
+  }
+  closeTextEditor();
   stage.innerHTML = "";
+  state.canvasView = null;
   if (!state.preview) {
     stage.className = "canvas-stage";
     const empty = document.createElement("div");
     empty.className = "empty-state";
     empty.textContent = t("previewHint");
     stage.append(empty);
+    updateEditBar();
     return;
   }
   stage.className = "canvas-stage has-preview";
@@ -1936,26 +1966,51 @@ function renderCanvas() {
   wrap.className = "canvas-preview";
   const viewport = document.createElement("div");
   viewport.className = "canvas-viewport";
+  // The transform target wraps the image and (in edit mode) the SVG overlay so
+  // both pan/zoom together, keeping overlay boxes pinned to image pixels.
+  const content = document.createElement("div");
+  content.className = "canvas-content";
   const img = document.createElement("img");
   img.className = "canvas-img";
   img.alt = "";
   img.draggable = false;
-  viewport.append(img);
+  content.append(img);
+
+  let overlay = null;
+  if (state.editMode && state.editData) {
+    // HTML overlay layer in image-pixel space; it scales with `content`, so the
+    // text boxes (and their font-size in px) track pan/zoom automatically.
+    overlay = document.createElement("div");
+    overlay.className = "canvas-overlay";
+    overlay.style.width = `${state.editData.width}px`;
+    overlay.style.height = `${state.editData.height}px`;
+    content.append(overlay);
+  }
+  viewport.append(content);
   wrap.append(viewport);
   stage.append(wrap);
-  setupImageViewer(viewport, img);
+  state.canvasView = setupImageViewer(viewport, content, img);
+  // The canvas always shows the exact rendered PNG (the renderer does anti-overlap
+  // repositioning + font auto-fit that HTML can't replicate, so we never fake the
+  // text). In edit mode the overlay adds transparent selectable/draggable boxes;
+  // editing a box re-renders and refreshes this image with the exact result.
   loadLocalImage(img, state.preview);
+  if (overlay) renderOverlay(overlay);
+  updateEditBar();
 }
 
 // Lightweight pan/zoom for the preview canvas (no library). The image starts
 // fit-to-view (aspect preserved, fully visible); wheel zooms toward the cursor,
-// drag pans, double-click re-fits. Translate/scale via a single CSS transform.
-function setupImageViewer(viewport, img) {
-  const view = { scale: 1, base: 1, tx: 0, ty: 0, natW: 0, natH: 0 };
+// drag pans, double-click re-fits. Translate/scale via a single CSS transform on
+// the content wrapper. Returns the live `view` so edit code can map screen<->image.
+function setupImageViewer(viewport, content, img) {
+  const view = { scale: 1, base: 1, tx: 0, ty: 0, natW: 0, natH: 0, loaded: false, onchange: null };
 
   const apply = () => {
-    img.style.transform = `translate(${view.tx}px, ${view.ty}px) scale(${view.scale})`;
+    content.style.transform = `translate(${view.tx}px, ${view.ty}px) scale(${view.scale})`;
+    if (view.onchange) view.onchange();
   };
+  view.apply = apply;
   const fit = () => {
     const vw = viewport.clientWidth;
     const vh = viewport.clientHeight;
@@ -1967,8 +2022,18 @@ function setupImageViewer(viewport, img) {
     view.ty = (vh - view.natH * view.scale) / 2;
     apply();
   };
+  view.fit = fit;
 
-  img.addEventListener("load", fit);
+  // Fit on first load; on later src swaps (re-render after an edit) keep the
+  // current pan/zoom instead of snapping back to fit.
+  img.addEventListener("load", () => {
+    if (!view.loaded) {
+      view.loaded = true;
+      fit();
+    } else {
+      apply();
+    }
+  });
 
   viewport.addEventListener(
     "wheel",
@@ -2028,6 +2093,271 @@ function setupImageViewer(viewport, img) {
     new ResizeObserver(() => {
       if (Math.abs(view.scale - view.base) < 1e-3) fit();
     }).observe(viewport);
+  }
+  return view;
+}
+
+// ── P5 editable typeset overlay ──────────────────────────────────────────────
+// The result PNG stays as the canvas background (exact, baked text); the SVG
+// overlay draws one selectable/draggable box per text block. Editing text or
+// dragging a box commits to the backend (RerenderExport, renderer-only, no
+// models), which overwrites the PNG and returns a fresh data URL we swap in.
+
+function regionByIndex(index) {
+  return state.editData ? state.editData.regions[index] : null;
+}
+
+// The result item currently previewed, if it carries an editable sidecar.
+function currentEditableResult() {
+  if (!state.preview) return null;
+  return (
+    state.results.find(
+      (it) => it.status === "done" && it.output === state.preview && it.editable,
+    ) || null
+  );
+}
+
+function updateEditBar() {
+  const bar = els.canvasEditBar;
+  if (!bar) return;
+  const editable = currentEditableResult();
+  bar.hidden = !editable && !state.editMode;
+  if (els.toggleEdit) els.toggleEdit.hidden = state.editMode || !editable;
+  if (els.exitEdit) els.exitEdit.hidden = !state.editMode;
+  if (els.editHint) els.editHint.hidden = !state.editMode;
+}
+
+async function enterEditMode() {
+  const item = currentEditableResult();
+  if (!item) return;
+  try {
+    const data = await invoke("loadEditable", { path: item.output });
+    state.editData = {
+      path: item.output,
+      width: data.width,
+      height: data.height,
+      // Text-free inpainted background; used as the edit textarea's backdrop so it
+      // shows clean manga (no old baked text) behind what the user types.
+      background: data.background || "",
+      regions: Array.isArray(data.regions) ? data.regions : [],
+    };
+    state.editMode = true;
+    state.editSelected = null;
+    renderCanvas();
+    addLog("info", `${t("editEntered")}（${state.editData.regions.length} 框）`);
+  } catch (err) {
+    addLog("error", `${t("editFailed")}: ${err.message}`);
+  }
+}
+
+function exitEditMode({ silent } = {}) {
+  closeTextEditor();
+  const wasEditing = state.editMode;
+  state.editMode = false;
+  state.editData = null;
+  state.editSelected = null;
+  if (wasEditing && !silent) renderCanvas();
+}
+
+// Build the overlay: one transparent box per region (in image-pixel space inside
+// `content`, so it pans/zooms with the canvas). The boxes are just selection/drag
+// handles over the exact baked image — no faked text.
+function renderOverlay(layer) {
+  if (!state.editData) return;
+  layer.innerHTML = "";
+  for (const region of state.editData.regions) {
+    const box = document.createElement("div");
+    box.className = "overlay-box";
+    box.dataset.index = region.index;
+    box.style.left = `${region.x}px`;
+    box.style.top = `${region.y}px`;
+    box.style.width = `${Math.max(1, region.w)}px`;
+    box.style.height = `${Math.max(1, region.h)}px`;
+    if (state.editSelected === region.index) box.classList.add("is-selected");
+    layer.append(box);
+  }
+  setupOverlayInteractions(layer);
+}
+
+function selectRegion(index) {
+  state.editSelected = index;
+  const layer = els.canvasStage.querySelector(".canvas-overlay");
+  if (!layer) return;
+  layer.querySelectorAll(".overlay-box").forEach((b) => {
+    b.classList.toggle("is-selected", Number(b.dataset.index) === index);
+  });
+}
+
+function overlayBox(index) {
+  const layer = els.canvasStage.querySelector(".canvas-overlay");
+  return layer ? layer.querySelector(`.overlay-box[data-index="${index}"]`) : null;
+}
+
+function setupOverlayInteractions(layer) {
+  let drag = null;
+  layer.addEventListener("pointerdown", (event) => {
+    const box = event.target.closest(".overlay-box");
+    if (!box) return; // empty area falls through to viewport pan
+    const index = Number(box.dataset.index);
+    // While this box is being edited, let clicks place the caret (no drag).
+    if (state.editEditor && state.editEditor.index === index) return;
+    event.stopPropagation();
+    selectRegion(index);
+    const region = regionByIndex(index);
+    if (!region) return;
+    drag = { index, box, startX: event.clientX, startY: event.clientY, ox: region.x, oy: region.y, moved: false };
+    try {
+      box.setPointerCapture(event.pointerId);
+    } catch (_) {}
+  });
+  layer.addEventListener("pointermove", (event) => {
+    if (!drag) return;
+    const view = state.canvasView;
+    if (!view || !view.scale) return;
+    const dx = (event.clientX - drag.startX) / view.scale;
+    const dy = (event.clientY - drag.startY) / view.scale;
+    if (Math.abs(dx) > 2 || Math.abs(dy) > 2) drag.moved = true;
+    drag.box.style.left = `${drag.ox + dx}px`;
+    drag.box.style.top = `${drag.oy + dy}px`;
+  });
+  const endDrag = (event) => {
+    if (!drag) return;
+    const view = state.canvasView;
+    const scale = view && view.scale ? view.scale : 1;
+    const dx = Math.round((event.clientX - drag.startX) / scale);
+    const dy = Math.round((event.clientY - drag.startY) / scale);
+    const d = drag;
+    drag = null;
+    try {
+      d.box.releasePointerCapture(event.pointerId);
+    } catch (_) {}
+    const region = regionByIndex(d.index);
+    if (d.moved && (dx !== 0 || dy !== 0)) {
+      if (region) {
+        region.x += dx;
+        region.y += dy;
+      }
+      applyEdit([{ index: d.index, dx, dy }]);
+    } else if (region) {
+      // Negligible drag: snap back.
+      d.box.style.left = `${region.x}px`;
+      d.box.style.top = `${region.y}px`;
+    }
+  };
+  layer.addEventListener("pointerup", endDrag);
+  layer.addEventListener("pointercancel", endDrag);
+  layer.addEventListener("dblclick", (event) => {
+    const box = event.target.closest(".overlay-box");
+    if (!box) return;
+    event.stopPropagation();
+    openTextEditor(Number(box.dataset.index));
+  });
+}
+
+// Edit a region's text: a textarea floats over the box in screen space, styled
+// like the bubble (region bg color masks the baked text underneath, matching
+// fg/size) so it reads as in-place editing. On commit the backend re-renders and
+// the canvas refreshes with the exact result. Enter commits, Esc cancels.
+function openTextEditor(index) {
+  closeTextEditor();
+  const region = regionByIndex(index);
+  const viewport = els.canvasStage.querySelector(".canvas-viewport");
+  const view = state.canvasView;
+  if (!region || !viewport || !view) return;
+  selectRegion(index);
+  const box = overlayBox(index);
+  if (box) box.classList.add("is-editing");
+
+  const ta = document.createElement("textarea");
+  ta.className = "overlay-editor";
+  ta.value = region.text || "";
+  ta.spellcheck = false;
+  const fs =
+    region.fontSize && region.fontSize > 0
+      ? region.fontSize
+      : Math.max(12, Math.round(region.h * 0.6));
+  if (Array.isArray(region.fg)) {
+    ta.style.color = `rgb(${region.fg[0]}, ${region.fg[1]}, ${region.fg[2]})`;
+  }
+  const bgUrl = state.editData.background;
+  // Show the text-free manga behind the editor (not a solid box): use the clean
+  // background scaled to the current view, offset so this region's patch aligns.
+  const place = () => {
+    ta.style.left = `${view.tx + region.x * view.scale}px`;
+    ta.style.top = `${view.ty + region.y * view.scale}px`;
+    ta.style.width = `${Math.max(60, region.w * view.scale)}px`;
+    ta.style.minHeight = `${Math.max(24, region.h * view.scale)}px`;
+    ta.style.fontSize = `${Math.max(11, fs * view.scale)}px`;
+    if (bgUrl) {
+      ta.style.backgroundImage = `url("${bgUrl}")`;
+      ta.style.backgroundSize = `${state.editData.width * view.scale}px ${state.editData.height * view.scale}px`;
+      ta.style.backgroundPosition = `${-region.x * view.scale}px ${-region.y * view.scale}px`;
+    }
+  };
+  place();
+  view.onchange = place;
+  viewport.append(ta);
+  state.editEditor = { index, ta, box, original: region.text || "" };
+  ta.focus();
+  ta.select();
+  ta.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      cancelTextEditor();
+    } else if (event.key === "Enter" && !event.shiftKey) {
+      event.preventDefault();
+      commitTextEditor();
+    }
+  });
+  ta.addEventListener("blur", () => commitTextEditor());
+}
+
+function readEditorText(el) {
+  // innerText preserves line breaks as \n; normalize nbsp back to spaces.
+  return (el.innerText || "").replace(/ /g, " ");
+}
+
+function finishEditor(ed) {
+  if (state.canvasView) state.canvasView.onchange = null;
+  if (ed.box) ed.box.classList.remove("is-editing");
+  if (ed.ta && ed.ta.parentNode) ed.ta.parentNode.removeChild(ed.ta);
+  state.editEditor = null;
+}
+
+function commitTextEditor() {
+  const ed = state.editEditor;
+  if (!ed) return;
+  const text = ed.ta.value;
+  const index = ed.index;
+  finishEditor(ed);
+  const region = regionByIndex(index);
+  if (region && text !== ed.original) {
+    region.text = text;
+    applyEdit([{ index, text }]);
+  }
+}
+
+function cancelTextEditor() {
+  if (state.editEditor) finishEditor(state.editEditor);
+}
+
+function closeTextEditor() {
+  if (state.editEditor) commitTextEditor();
+}
+
+// Persist an edit (renderer-only, no models): overwrites the result PNG + sidecar,
+// then refresh the canvas with the exact re-rendered image (zoom/pan preserved).
+async function applyEdit(edits) {
+  if (!state.editData) return;
+  try {
+    const res = await invoke("rerenderExport", { path: state.editData.path, edits });
+    if (res && res.data_url) {
+      const img = els.canvasStage.querySelector("img.canvas-img");
+      if (img) img.src = res.data_url;
+    }
+    addLog("success", t("editApplied"));
+  } catch (err) {
+    addLog("error", `${t("editFailed")}: ${err.message}`);
   }
 }
 
@@ -3295,6 +3625,9 @@ async function bootstrap() {
     els.logList.innerHTML = "";
     renderLogEmptyState();
   });
+
+  if (els.toggleEdit) els.toggleEdit.addEventListener("click", () => enterEditMode());
+  if (els.exitEdit) els.exitEdit.addEventListener("click", () => exitEditMode());
 
   setDeviceMode(localStorage.getItem("mitWebviewDevice") || "auto");
   els.deviceModeGroup.addEventListener("change", () => {

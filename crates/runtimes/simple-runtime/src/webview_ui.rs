@@ -37,6 +37,9 @@ use crate::{
 const INDEX_HTML: &str = include_str!("../webview/index.html");
 const STYLES_CSS: &str = include_str!("../webview/styles.css");
 const APP_JS: &str = include_str!("../webview/app.js");
+/// Extension of the editable Export sidecar written next to each rendered result
+/// (P5). Holds the raw `Export` blob (original + inpainted background + text blocks).
+const EDITABLE_EXT: &str = "mit";
 // A single shared `Models` instance serves all concurrent images. The pipeline runs with
 // `&self`, and `AsyncSessionPool` handles concurrent ONNX submissions internally, so there
 // is no need to duplicate `Models` (which would double the resident VRAM). GPU concurrency
@@ -76,6 +79,8 @@ enum IpcKind {
     ExportResults,
     ListDir,
     ReadImage,
+    LoadEditable,
+    RerenderExport,
     RevealInExplorer,
     GetModelsConfig,
     SetModelsDir,
@@ -126,6 +131,8 @@ struct TranslationOutput {
     file_name: Option<String>,
     status: String,
     message: String,
+    /// Path to the editable Export sidecar (P5), when one was written for this result.
+    editable: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -194,6 +201,36 @@ struct ReadImagePayload {
 #[derive(Deserialize)]
 struct RevealInExplorerPayload {
     path: PathBuf,
+}
+
+/// P5: load the editable Export sidecar for a rendered result. `path` is the
+/// result image path; the sidecar is resolved by swapping its extension.
+#[derive(Deserialize)]
+struct LoadEditablePayload {
+    path: PathBuf,
+}
+
+/// P5.2: apply manual edits (text and/or position offset) to a result's blocks and
+/// re-render. `path` is the result image path (its sidecar holds the Export).
+#[derive(Deserialize)]
+struct RerenderExportPayload {
+    path: PathBuf,
+    #[serde(default)]
+    edits: Vec<BlockEdit>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct BlockEdit {
+    index: usize,
+    /// Replacement translated text for this block (None = leave text unchanged).
+    #[serde(default)]
+    text: Option<String>,
+    /// Image-space pixel offset to shift the whole block by (applied to every point).
+    #[serde(default)]
+    dx: i64,
+    #[serde(default)]
+    dy: i64,
 }
 
 #[derive(Deserialize)]
@@ -377,6 +414,145 @@ fn read_image_data_url(path: &Path) -> Result<serde_json::Value> {
     let bytes = std::fs::read(path).map_err(|err| anyhow!("Failed to read image: {err}"))?;
     let data_url = format!("data:{};base64,{}", mime_for(path), base64_encode(&bytes));
     Ok(serde_json::json!({ "data_url": data_url }))
+}
+
+/// Translation-map key used to force a manually edited string through the renderer.
+/// The renderer resolves text via `translations["last_trans"] -> translations[that]`,
+/// so a manual edit points `last_trans` here and stores the text under this key.
+const MANUAL_TRANS_KEY: &str = "__manual_edit__";
+
+/// Resolve the sidecar path for a rendered result and return it as a string if the
+/// editable Export blob exists on disk.
+fn editable_sidecar(output: &Path) -> Option<String> {
+    let sidecar = output.with_extension(EDITABLE_EXT);
+    sidecar.exists().then(|| sidecar.display().to_string())
+}
+
+/// Resolve the text a block currently renders, matching the PNG renderer's lookup
+/// (`last_trans` -> keyed translation -> any translation -> source text).
+fn resolved_block_text(block: &textline_merge::TextBlock) -> String {
+    block
+        .translations
+        .get("last_trans")
+        .and_then(|key| block.translations.get(key))
+        .or_else(|| block.translations.values().next())
+        .cloned()
+        .unwrap_or_else(|| block.text.clone())
+}
+
+/// Load the editable Export for a result: returns the text-free inpainted background
+/// as a data URL plus a lightweight per-block region list (axis-aligned bbox in the
+/// render image's coordinate space, current text, colors). The frontend scales these
+/// boxes by `naturalWidth/Height` to overlay them on the canvas (P5.1/P5.2).
+fn load_editable(result_path: &Path) -> Result<serde_json::Value> {
+    let sidecar = result_path.with_extension(EDITABLE_EXT);
+    let bytes =
+        std::fs::read(&sidecar).map_err(|err| anyhow!("Failed to read editable sidecar: {err}"))?;
+    let exp = export::Export::load(bytes)
+        .ok_or_else(|| anyhow!("Failed to parse editable export (corrupt sidecar?)"))?;
+
+    let bg = png::background_image(&exp);
+    let (width, height) = (bg.width, bg.height);
+    let bg_png = crate::raw_image_to_png_bytes(&bg)?;
+    let background = format!("data:image/png;base64,{}", base64_encode(&bg_png));
+
+    let regions = exp
+        .blocks
+        .iter()
+        .enumerate()
+        .map(|(index, block)| {
+            let mut min_x = i64::MAX;
+            let mut min_y = i64::MAX;
+            let mut max_x = i64::MIN;
+            let mut max_y = i64::MIN;
+            for line in &block.lines {
+                for p in line {
+                    min_x = min_x.min(p.x);
+                    min_y = min_y.min(p.y);
+                    max_x = max_x.max(p.x);
+                    max_y = max_y.max(p.y);
+                }
+            }
+            // Empty `lines` would leave the sentinels; clamp to a zero-size box.
+            if min_x > max_x {
+                min_x = 0;
+                max_x = 0;
+                min_y = 0;
+                max_y = 0;
+            }
+            serde_json::json!({
+                "index": index,
+                "x": min_x,
+                "y": min_y,
+                "w": (max_x - min_x).max(0),
+                "h": (max_y - min_y).max(0),
+                "angle": block.angle,
+                "text": resolved_block_text(block),
+                "fg": block.fg_color.map(|(r, g, b)| [r, g, b]),
+                "bg": block.bg_color.map(|(r, g, b)| [r, g, b]),
+                "fontSize": block.font_size,
+            })
+        })
+        .collect::<Vec<_>>();
+
+    Ok(serde_json::json!({
+        "width": width,
+        "height": height,
+        "background": background,
+        "regions": regions,
+    }))
+}
+
+/// Apply manual edits (text and/or position offset) to a result's blocks, re-render
+/// the PNG (renderer-only, no models), overwrite both the result image and its
+/// editable sidecar, and return the fresh image as a data URL (P5.2).
+fn rerender_export(result_path: &Path, edits: &[BlockEdit]) -> Result<serde_json::Value> {
+    let sidecar = result_path.with_extension(EDITABLE_EXT);
+    let bytes =
+        std::fs::read(&sidecar).map_err(|err| anyhow!("Failed to read editable sidecar: {err}"))?;
+    let mut exp = export::Export::load(bytes)
+        .ok_or_else(|| anyhow!("Failed to parse editable export (corrupt sidecar?)"))?;
+
+    for edit in edits {
+        let Some(block) = exp.blocks.get_mut(edit.index) else {
+            continue;
+        };
+        if let Some(text) = &edit.text {
+            block
+                .translations
+                .insert("last_trans".to_owned(), MANUAL_TRANS_KEY.to_owned());
+            block
+                .translations
+                .insert(MANUAL_TRANS_KEY.to_owned(), text.clone());
+        }
+        if edit.dx != 0 || edit.dy != 0 {
+            for line in &mut block.lines {
+                for p in line.iter_mut() {
+                    p.x += edit.dx;
+                    p.y += edit.dy;
+                }
+            }
+        }
+    }
+
+    // Re-serialize the mutated Export back to the sidecar so further edits accumulate.
+    let raw = exp.export();
+    if let Err(err) = File::create(&sidecar).and_then(|mut f| f.write_all(&raw)) {
+        return Err(anyhow!("Failed to update editable sidecar: {err}"));
+    }
+    let exp = export::Export::load(raw).ok_or_else(|| anyhow!("Failed to reload edited export"))?;
+
+    // Editing always targets the PNG output (the GUI only enables it for png results).
+    let settings = load_saved_settings().unwrap_or_default();
+    let data =
+        crate::render_export_to_png_bytes_with_direction(exp, settings.render.text_direction)?;
+    File::create(result_path)
+        .and_then(|mut f| f.write_all(&data))
+        .map_err(|err| anyhow!("Failed to write re-rendered image: {err}"))?;
+
+    Ok(serde_json::json!({
+        "data_url": format!("data:image/png;base64,{}", base64_encode(&data)),
+    }))
 }
 
 /// Minimal standard base64 encoder (with padding); avoids pulling in a crate.
@@ -570,6 +746,16 @@ fn handle_ipc_request(request: &IpcRequest) -> Result<serde_json::Value> {
             let payload = serde_json::from_value::<ReadImagePayload>(request.payload.clone())
                 .map_err(|err| anyhow!("Invalid readImage payload: {err}"))?;
             read_image_data_url(&payload.path).and_then(to_value)
+        }
+        IpcKind::LoadEditable => {
+            let payload = serde_json::from_value::<LoadEditablePayload>(request.payload.clone())
+                .map_err(|err| anyhow!("Invalid loadEditable payload: {err}"))?;
+            load_editable(&payload.path)
+        }
+        IpcKind::RerenderExport => {
+            let payload = serde_json::from_value::<RerenderExportPayload>(request.payload.clone())
+                .map_err(|err| anyhow!("Invalid rerenderExport payload: {err}"))?;
+            rerender_export(&payload.path, &payload.edits)
         }
         IpcKind::RevealInExplorer => {
             let payload =
@@ -1403,6 +1589,7 @@ async fn run_translation_job(
                         output: Some(output.display().to_string()),
                         status: "done".to_owned(),
                         message: "完成".to_owned(),
+                        editable: editable_sidecar(&output),
                     }
                 }
                 Ok(None) => {
@@ -1414,6 +1601,7 @@ async fn run_translation_job(
                         file_name: None,
                         status: "skipped".to_owned(),
                         message: "未检测到可翻译文本".to_owned(),
+                        editable: None,
                     }
                 }
                 Err(err) => {
@@ -1426,6 +1614,7 @@ async fn run_translation_job(
                         file_name: None,
                         status: "failed".to_owned(),
                         message: err.to_string(),
+                        editable: None,
                     }
                 }
             };
@@ -1636,6 +1825,22 @@ async fn process_one(
     output.set_extension(settings.render.renderer.extension());
     prepare_renderer_assets(&output, &settings.render.renderer)?;
     let render_timer = StageTimer::start("render", Some(logger));
+    // P5.0: persist the editable Export as a sidecar next to the output, then reload
+    // it to render the flattened image. The raw blob carries the original image, the
+    // inpainted background and every text block, so the GUI can later edit text or
+    // position and re-render without rerunning any model. Only the PNG renderer is
+    // editable (re-rendering produces a PNG), so skip the sidecar for html/raw.
+    let exp = if matches!(settings.render.renderer, Renderer::Png) {
+        let editable_bytes = exp.export();
+        let sidecar = output.with_extension(EDITABLE_EXT);
+        if let Err(err) = File::create(&sidecar).and_then(|mut f| f.write_all(&editable_bytes)) {
+            logger.log("warn", format!("failed to write editable sidecar: {err}"));
+        }
+        export::Export::load(editable_bytes)
+            .ok_or_else(|| anyhow!("failed to reload editable export for {file_name}"))?
+    } else {
+        exp
+    };
     let data = render_export_bytes_with_settings(exp, settings)?;
     render_timer.finish();
     let write_timer = StageTimer::start("write", Some(logger));
