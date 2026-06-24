@@ -2411,6 +2411,10 @@ svg {
   line-height: 1.2;
   text-align: center;
   resize: none;
+  /* No soft-wrap (paired with the textarea's wrap="off"): a single-line translation
+     stays one line instead of reflowing when the browser font is a touch wider than
+     the renderer's. Overflowing lines scroll horizontally rather than wrap. */
+  white-space: pre;
   overflow: hidden;
   box-shadow: var(--shadow-1);
 }

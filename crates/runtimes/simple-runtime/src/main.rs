@@ -47,23 +47,38 @@ pub fn render_export_to_png_bytes(exp: Export) -> anyhow::Result<Vec<u8>> {
     render_export_to_png_bytes_with_direction(exp, TextDirection::Auto)
 }
 
+/// Build the `PngRenderConfig` used by the PNG render path for a given text direction.
+/// Shared so the editor's font-size measuring ([`png_block_font_metrics`]) stays in
+/// lockstep with what `render` actually bakes.
+pub fn png_render_config(text_direction: TextDirection) -> PngRenderConfig {
+    PngRenderConfig {
+        text_direction: match text_direction {
+            TextDirection::Auto => TextDirectionMode::Auto,
+            TextDirection::Horizontal => TextDirectionMode::Horizontal,
+            TextDirection::Vertical => TextDirectionMode::Vertical,
+        },
+        ..PngRenderConfig::default()
+    }
+}
+
 pub fn render_export_to_png_bytes_with_direction(
     exp: Export,
     text_direction: TextDirection,
 ) -> anyhow::Result<Vec<u8>> {
     let mut renderer = PngRenderer::default();
-    let img = renderer.render(
-        exp,
-        PngRenderConfig {
-            text_direction: match text_direction {
-                TextDirection::Auto => TextDirectionMode::Auto,
-                TextDirection::Horizontal => TextDirectionMode::Horizontal,
-                TextDirection::Vertical => TextDirectionMode::Vertical,
-            },
-            ..PngRenderConfig::default()
-        },
-    );
+    let img = renderer.render(exp, png_render_config(text_direction));
     raw_image_to_png_bytes(&img)
+}
+
+/// Measure the actual font size (and orientation) the PNG renderer would use for each
+/// block, without compositing. The P5 editor uses this so its edit box font matches the
+/// baked output rather than the raw detected size.
+pub fn png_block_font_metrics(
+    exp: &Export,
+    text_direction: TextDirection,
+) -> Vec<Option<png::BlockFontMetric>> {
+    let mut renderer = PngRenderer::default();
+    renderer.font_sizes(exp, &png_render_config(text_direction))
 }
 
 /// Encode a decoded `RawImage` (1/3/4 channel, 8-bit) to PNG bytes. Shared by the

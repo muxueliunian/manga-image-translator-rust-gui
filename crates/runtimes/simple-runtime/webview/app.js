@@ -187,7 +187,7 @@ const i18n = {
     previewHint: "单击左侧条目预览图片。",
     editEnter: "编辑嵌字",
     editExit: "完成编辑",
-    editHintIdle: "点选文字框：双击改字 · 拖动挪位",
+    editHintIdle: "点选文字框：单击改字 · 拖动挪位",
     editEntered: "已进入编辑模式",
     editApplied: "已更新嵌字",
     editFailed: "编辑失败",
@@ -446,7 +446,7 @@ const i18n = {
     previewHint: "Click an item on the left to preview.",
     editEnter: "Edit Text",
     editExit: "Done",
-    editHintIdle: "Click a box: double-click to edit · drag to move",
+    editHintIdle: "Click a box to edit · drag to move",
     editEntered: "Edit mode on",
     editApplied: "Typeset updated",
     editFailed: "Edit failed",
@@ -2239,26 +2239,24 @@ function setupOverlayInteractions(layer) {
       }
       applyEdit([{ index: d.index, dx, dy }]);
     } else if (region) {
-      // Negligible drag: snap back.
+      // No real drag: snap back. A genuine click (pointerup) opens the editor with the
+      // caret at the click point; an interrupted gesture (pointercancel) just resets.
       d.box.style.left = `${region.x}px`;
       d.box.style.top = `${region.y}px`;
+      if (event.type === "pointerup") {
+        openTextEditor(d.index, { clientX: event.clientX, clientY: event.clientY });
+      }
     }
   };
   layer.addEventListener("pointerup", endDrag);
   layer.addEventListener("pointercancel", endDrag);
-  layer.addEventListener("dblclick", (event) => {
-    const box = event.target.closest(".overlay-box");
-    if (!box) return;
-    event.stopPropagation();
-    openTextEditor(Number(box.dataset.index));
-  });
 }
 
 // Edit a region's text: a textarea floats over the box in screen space, styled
 // like the bubble (region bg color masks the baked text underneath, matching
 // fg/size) so it reads as in-place editing. On commit the backend re-renders and
 // the canvas refreshes with the exact result. Enter commits, Esc cancels.
-function openTextEditor(index) {
+function openTextEditor(index, point) {
   closeTextEditor();
   const region = regionByIndex(index);
   const viewport = els.canvasStage.querySelector(".canvas-viewport");
@@ -2270,6 +2268,10 @@ function openTextEditor(index) {
 
   const ta = document.createElement("textarea");
   ta.className = "overlay-editor";
+  // Don't soft-wrap: a single-line translation stays one line instead of reflowing
+  // to two when the browser font is slightly wider than the renderer's (the editor is
+  // just an input — the canvas always shows the precise baked PNG).
+  ta.wrap = "off";
   ta.value = region.text || "";
   ta.spellcheck = false;
   const fs =
@@ -2299,7 +2301,7 @@ function openTextEditor(index) {
   viewport.append(ta);
   state.editEditor = { index, ta, box, original: region.text || "" };
   ta.focus();
-  ta.select();
+  placeCaretAtPoint(ta, point);
   ta.addEventListener("keydown", (event) => {
     if (event.key === "Escape") {
       event.preventDefault();
@@ -2310,6 +2312,54 @@ function openTextEditor(index) {
     }
   });
   ta.addEventListener("blur", () => commitTextEditor());
+}
+
+// Drop the caret where the user clicked (single-click edit). `caretRangeFromPoint`
+// is unreliable for <textarea> (its text lives in shadow DOM), so map the click to a
+// character offset ourselves via canvas text measurement, honoring the editor's
+// center alignment and any manual line breaks. Falls back to the end of the text.
+let caretMeasureCanvas = null;
+function placeCaretAtPoint(ta, point) {
+  const value = ta.value;
+  const setEnd = () => ta.setSelectionRange(value.length, value.length);
+  if (!point || !value) return setEnd();
+  try {
+    const rect = ta.getBoundingClientRect();
+    const style = getComputedStyle(ta);
+    const fontSize = parseFloat(style.fontSize) || 12;
+    const lineHeight = parseFloat(style.lineHeight) || fontSize * 1.2;
+    const localX = point.clientX - rect.left + ta.scrollLeft;
+    const localY = point.clientY - rect.top + ta.scrollTop;
+    const lines = value.split("\n");
+    const lineIdx = Math.max(0, Math.min(lines.length - 1, Math.floor(localY / lineHeight)));
+
+    caretMeasureCanvas = caretMeasureCanvas || document.createElement("canvas");
+    const ctx = caretMeasureCanvas.getContext("2d");
+    ctx.font = `${style.fontStyle} ${style.fontWeight} ${fontSize}px ${style.fontFamily}`;
+
+    const line = lines[lineIdx];
+    const lineWidth = ctx.measureText(line).width;
+    let startX = 0;
+    if (style.textAlign === "center") startX = Math.max(0, (rect.width - lineWidth) / 2);
+    else if (style.textAlign === "right") startX = Math.max(0, rect.width - lineWidth);
+
+    let col = line.length;
+    let acc = startX;
+    for (let i = 0; i < line.length; i++) {
+      const chW = ctx.measureText(line[i]).width;
+      if (localX < acc + chW / 2) {
+        col = i;
+        break;
+      }
+      acc += chW;
+    }
+    let offset = col;
+    for (let i = 0; i < lineIdx; i++) offset += lines[i].length + 1;
+    offset = Math.max(0, Math.min(value.length, offset));
+    ta.setSelectionRange(offset, offset);
+  } catch (_) {
+    setEnd();
+  }
 }
 
 function readEditorText(el) {
@@ -2354,6 +2404,14 @@ async function applyEdit(edits) {
     if (res && res.data_url) {
       const img = els.canvasStage.querySelector("img.canvas-img");
       if (img) img.src = res.data_url;
+    }
+    // The re-render may have re-fitted font sizes (text changed); sync them so the
+    // edit box matches the baked output on its next open.
+    if (res && Array.isArray(res.regions)) {
+      for (const upd of res.regions) {
+        const region = regionByIndex(upd.index);
+        if (region && typeof upd.fontSize === "number") region.fontSize = upd.fontSize;
+      }
     }
     addLog("success", t("editApplied"));
   } catch (err) {

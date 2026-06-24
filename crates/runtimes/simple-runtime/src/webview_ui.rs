@@ -456,6 +456,14 @@ fn load_editable(result_path: &Path) -> Result<serde_json::Value> {
     let bg_png = crate::raw_image_to_png_bytes(&bg)?;
     let background = format!("data:image/png;base64,{}", base64_encode(&bg_png));
 
+    // Actual per-block font size the renderer will use, so the edit box matches the
+    // baked output (P5 task 1). Vertical/empty blocks fall back to the detected size.
+    let text_direction = load_saved_settings()
+        .unwrap_or_default()
+        .render
+        .text_direction;
+    let font_metrics = crate::png_block_font_metrics(&exp, text_direction);
+
     let regions = exp
         .blocks
         .iter()
@@ -480,6 +488,13 @@ fn load_editable(result_path: &Path) -> Result<serde_json::Value> {
                 min_y = 0;
                 max_y = 0;
             }
+            // Prefer the renderer's actual (box-fitted) font size for horizontal
+            // blocks; for vertical blocks "font size" means column width, which the
+            // horizontal edit box can't mirror, so keep the detected value there.
+            let font_size = match font_metrics.get(index).copied().flatten() {
+                Some(metric) if !metric.vertical => metric.font_size,
+                _ => block.font_size as f32,
+            };
             serde_json::json!({
                 "index": index,
                 "x": min_x,
@@ -490,7 +505,7 @@ fn load_editable(result_path: &Path) -> Result<serde_json::Value> {
                 "text": resolved_block_text(block),
                 "fg": block.fg_color.map(|(r, g, b)| [r, g, b]),
                 "bg": block.bg_color.map(|(r, g, b)| [r, g, b]),
-                "fontSize": block.font_size,
+                "fontSize": font_size,
             })
         })
         .collect::<Vec<_>>();
@@ -544,14 +559,33 @@ fn rerender_export(result_path: &Path, edits: &[BlockEdit]) -> Result<serde_json
 
     // Editing always targets the PNG output (the GUI only enables it for png results).
     let settings = load_saved_settings().unwrap_or_default();
-    let data =
-        crate::render_export_to_png_bytes_with_direction(exp, settings.render.text_direction)?;
+    let text_direction = settings.render.text_direction;
+
+    // The edit may have changed the text, so the box-fitted font size can change too.
+    // Return the fresh per-block font sizes so the editor's edit box stays in sync on
+    // its next open (matches the fallback rule in `load_editable`).
+    let font_metrics = crate::png_block_font_metrics(&exp, text_direction);
+    let regions = exp
+        .blocks
+        .iter()
+        .enumerate()
+        .map(|(index, block)| {
+            let font_size = match font_metrics.get(index).copied().flatten() {
+                Some(metric) if !metric.vertical => metric.font_size,
+                _ => block.font_size as f32,
+            };
+            serde_json::json!({ "index": index, "fontSize": font_size })
+        })
+        .collect::<Vec<_>>();
+
+    let data = crate::render_export_to_png_bytes_with_direction(exp, text_direction)?;
     File::create(result_path)
         .and_then(|mut f| f.write_all(&data))
         .map_err(|err| anyhow!("Failed to write re-rendered image: {err}"))?;
 
     Ok(serde_json::json!({
         "data_url": format!("data:image/png;base64,{}", base64_encode(&data)),
+        "regions": regions,
     }))
 }
 
