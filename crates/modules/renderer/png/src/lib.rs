@@ -13,10 +13,21 @@ use opencv::{
     imgproc::{self, dilate, morphology_default_border_value},
 };
 use ordered_float::OrderedFloat;
+use textline_merge::{TextBlock, OBB};
 
 pub struct PngRenderer {
     font_system: FontSystem,
     cache: SwashCache,
+}
+
+/// The font size (and orientation) the renderer actually uses for a block after
+/// box-fitting and detector-based clamping. Surfaced via [`PngRenderer::font_sizes`]
+/// so the P5 editor can size its edit box to match the baked output instead of the
+/// raw detected size.
+#[derive(Clone, Copy, Debug)]
+pub struct BlockFontMetric {
+    pub font_size: f32,
+    pub vertical: bool,
 }
 
 pub struct PngRenderConfig {
@@ -84,93 +95,137 @@ impl PngRenderer {
         normalize_color_image(&mut img);
         let overlay = exp.get_overlay();
         apply_inpaint_overlay(&mut img, &overlay);
-        let mut placed_boxes = Vec::new();
 
-        for block in exp.blocks {
-            let Some(obb) = block.obb() else {
+        for block in &exp.blocks {
+            let Some((render_block, _font_size, vertical, obb)) = self.block_layout(block, &config)
+            else {
                 continue;
             };
-            let text = block
-                .translations
-                .get("last_trans")
-                .and_then(|key| block.translations.get(key))
-                .or_else(|| block.translations.values().next())
-                .cloned()
-                .unwrap_or_else(|| block.text.clone());
-            if text.trim().is_empty() {
-                continue;
-            }
-
-            let source_text = block.text.clone();
-            let detected_vertical =
-                auto_detect_vertical(&source_text, block.lines.len(), obb.w, obb.h);
-            let vertical = match config.text_direction {
-                TextDirectionMode::Auto => detected_vertical,
-                TextDirectionMode::Horizontal => false,
-                TextDirectionMode::Vertical => true,
-            };
-            let size = render_size_for_direction(
-                (
-                    obb.w.ceil().max(1.0) as usize,
-                    obb.h.ceil().max(1.0) as usize,
-                ),
-                vertical,
-            );
-            let mut render_block = RenderTextBlock {
-                align: match config.align {
-                    MyAlign::Left => Align::Left,
-                    MyAlign::Center => Align::Center,
-                    MyAlign::Right => Align::Right,
-                },
-                default_font_size: config.font_size,
-                default_line_height: config.line_height,
-                vertical,
-                size,
-                texts: vec![Text {
-                    text,
-                    letter_spacing: config.letter_spacing,
-                    color: config.fg_color.or(block.fg_color).or(Some((0, 0, 0))),
-                    bg_color: config.bg_color.or(block.bg_color).or(Some((255, 255, 255))),
-                    font_size: config.font_size,
-                    line_height: config.line_height,
-                    family: config.family.clone(),
-                    weight: None,
-                    style: Style::Normal,
-                    stretch: None,
-                }],
-            };
-
-            let mut font_size =
-                self.max_fontsize(size, render_block.clone(), config.max_fontsize, 1.0);
-            if block.font_size > 0 {
-                let detected = block.font_size as f32;
-                font_size = font_size.clamp(
-                    (detected - config.detect_offset).max(1.0),
-                    detected + config.detect_offset,
-                );
-            }
-            font_size = font_size
-                .clamp(config.min_fontsize, config.max_fontsize)
-                .round()
-                .max(1.0);
-            render_block.set_font_size(font_size);
-
             let text_img = self.render_block(render_block);
             let theta = if vertical { obb.theta } else { 0.0 };
-            let (x, y, placed) = find_non_overlapping_position(
-                &placed_boxes,
-                img.width as f64,
-                img.height as f64,
-                &text_img,
-                obb.x,
-                obb.y,
-                theta,
-            );
-            alpha_composite_rotated(&mut img, &text_img, x, y, theta);
-            placed_boxes.push(placed);
+            // Composite each block at its detected box center, with no anti-overlap
+            // relocation: keeping the text anchored to its own box matters more than
+            // avoiding overlap, and the P5 editor relies on the box↔text correspondence
+            // (relocation used to fling a crammed block to the image center). Any
+            // overlap between neighboring blocks is left as-is.
+            alpha_composite_rotated(&mut img, &text_img, obb.x, obb.y, theta);
         }
         img
     }
+
+    /// Measure the font size (and orientation) the renderer would use for each block,
+    /// without compositing any pixels — same fitting/clamp logic as [`render`], just
+    /// the cheap measuring pass. Index-aligned with `exp.blocks`; `None` for blocks
+    /// that render nothing (no geometry or empty text). Used by the P5 editor so the
+    /// edit box font matches what gets baked in.
+    pub fn font_sizes(
+        &mut self,
+        exp: &Export,
+        config: &PngRenderConfig,
+    ) -> Vec<Option<BlockFontMetric>> {
+        exp.blocks
+            .iter()
+            .map(|block| {
+                self.block_layout(block, config)
+                    .map(|(_, font_size, vertical, _)| BlockFontMetric {
+                        font_size,
+                        vertical,
+                    })
+            })
+            .collect()
+    }
+
+    /// Shared per-block setup for [`render`] and [`font_sizes`]: resolve the text to
+    /// draw, decide horizontal/vertical, build the [`RenderTextBlock`], and compute the
+    /// final font size. Returns `None` when the block has no geometry or empty text.
+    ///
+    /// Font sizing: start from `max_fontsize` (the largest size whose wrapped text fits
+    /// the box), then nudge toward the detector's `block.font_size` for visual
+    /// consistency — but **cap at the fitting size**. Forcing the font larger than what
+    /// fits would overflow the fixed-height render buffer and clip wrapped lines, which
+    /// is why multi-line blocks used to render only their top line.
+    fn block_layout(
+        &mut self,
+        block: &TextBlock,
+        config: &PngRenderConfig,
+    ) -> Option<(RenderTextBlock, f32, bool, OBB)> {
+        let obb = block.obb()?;
+        let text = block
+            .translations
+            .get("last_trans")
+            .and_then(|key| block.translations.get(key))
+            .or_else(|| block.translations.values().next())
+            .cloned()
+            .unwrap_or_else(|| block.text.clone());
+        if text.trim().is_empty() {
+            return None;
+        }
+
+        let detected_vertical = auto_detect_vertical(&block.text, block.lines.len(), obb.w, obb.h);
+        let vertical = match config.text_direction {
+            TextDirectionMode::Auto => detected_vertical,
+            TextDirectionMode::Horizontal => false,
+            TextDirectionMode::Vertical => true,
+        };
+        let size = render_size_for_direction(
+            (
+                obb.w.ceil().max(1.0) as usize,
+                obb.h.ceil().max(1.0) as usize,
+            ),
+            vertical,
+        );
+        let mut render_block = RenderTextBlock {
+            align: match config.align {
+                MyAlign::Left => Align::Left,
+                MyAlign::Center => Align::Center,
+                MyAlign::Right => Align::Right,
+            },
+            default_font_size: config.font_size,
+            default_line_height: config.line_height,
+            vertical,
+            size,
+            texts: vec![Text {
+                text,
+                letter_spacing: config.letter_spacing,
+                color: config.fg_color.or(block.fg_color).or(Some((0, 0, 0))),
+                bg_color: config.bg_color.or(block.bg_color).or(Some((255, 255, 255))),
+                font_size: config.font_size,
+                line_height: config.line_height,
+                family: config.family.clone(),
+                weight: None,
+                style: Style::Normal,
+                stretch: None,
+            }],
+        };
+
+        let fitting = self.max_fontsize(size, render_block.clone(), config.max_fontsize, 1.0);
+        let font_size = fit_font_size(fitting, block.font_size, config);
+        render_block.set_font_size(font_size);
+
+        Some((render_block, font_size, vertical, obb))
+    }
+}
+
+/// Decide the final font size from the box-fitting size and the detector's hint.
+/// Nudges toward `detected` (the detector's per-block font size, `0` = unknown) for
+/// visual consistency, but **never exceeds `fitting`** — going above the largest size
+/// that fits the box would overflow the fixed-height render buffer and clip wrapped
+/// lines, so multi-line blocks would render only their top line.
+fn fit_font_size(fitting: f32, detected: u64, config: &PngRenderConfig) -> f32 {
+    let mut font_size = fitting;
+    if detected > 0 {
+        let detected = detected as f32;
+        font_size = font_size
+            .clamp(
+                (detected - config.detect_offset).max(1.0),
+                detected + config.detect_offset,
+            )
+            .min(fitting);
+    }
+    font_size
+        .clamp(config.min_fontsize, config.max_fontsize)
+        .round()
+        .max(1.0)
 }
 
 fn auto_detect_vertical(source_text: &str, line_count: usize, w: f64, h: f64) -> bool {
@@ -199,134 +254,6 @@ fn looks_like_horizontal_sentence(text: &str) -> bool {
         .filter(|ch| horizontal_marks.contains(ch))
         .count();
     mark_count > 0 && chars.len() >= 4
-}
-
-#[derive(Clone, Copy, Debug)]
-struct Aabb {
-    x1: f64,
-    y1: f64,
-    x2: f64,
-    y2: f64,
-}
-
-impl Aabb {
-    fn intersects(self, other: Self) -> bool {
-        self.x1 < other.x2 && self.x2 > other.x1 && self.y1 < other.y2 && self.y2 > other.y1
-    }
-
-    fn in_bounds(self, width: f64, height: f64) -> bool {
-        self.x1 >= 0.0 && self.y1 >= 0.0 && self.x2 <= width && self.y2 <= height
-    }
-
-    fn area(self) -> f64 {
-        (self.x2 - self.x1).max(0.0) * (self.y2 - self.y1).max(0.0)
-    }
-}
-
-fn find_non_overlapping_position(
-    placed_boxes: &[Aabb],
-    img_width: f64,
-    img_height: f64,
-    overlay: &RawImage,
-    center_x: f64,
-    center_y: f64,
-    theta: f64,
-) -> (f64, f64, Aabb) {
-    let base = rotated_aabb(overlay, center_x, center_y, theta);
-    if !collides(base, placed_boxes) && base.in_bounds(img_width, img_height) {
-        return (center_x, center_y, base);
-    }
-
-    let step = overlay.width.max(overlay.height) as f64 * 0.35 + 10.0;
-    let directions = [
-        (0.0, -1.0),
-        (0.0, 1.0),
-        (1.0, 0.0),
-        (-1.0, 0.0),
-        (1.0, -1.0),
-        (-1.0, -1.0),
-        (1.0, 1.0),
-        (-1.0, 1.0),
-    ];
-    let mut best = (
-        center_x,
-        center_y,
-        base,
-        collision_score(base, placed_boxes),
-    );
-
-    for ring in 1..=6 {
-        for (dx, dy) in directions {
-            let x = center_x + dx * step * ring as f64;
-            let y = center_y + dy * step * ring as f64;
-            let candidate = rotated_aabb(overlay, x, y, theta);
-            if !candidate.in_bounds(img_width, img_height) {
-                continue;
-            }
-            let score = collision_score(candidate, placed_boxes);
-            if score <= f64::EPSILON {
-                return (x, y, candidate);
-            }
-            if score < best.3 {
-                best = (x, y, candidate, score);
-            }
-        }
-    }
-
-    (best.0, best.1, best.2)
-}
-
-fn collides(candidate: Aabb, placed_boxes: &[Aabb]) -> bool {
-    placed_boxes
-        .iter()
-        .any(|placed| candidate.intersects(*placed))
-}
-
-fn collision_score(candidate: Aabb, placed_boxes: &[Aabb]) -> f64 {
-    placed_boxes
-        .iter()
-        .map(|placed| intersection(candidate, *placed).area())
-        .sum()
-}
-
-fn intersection(a: Aabb, b: Aabb) -> Aabb {
-    Aabb {
-        x1: a.x1.max(b.x1),
-        y1: a.y1.max(b.y1),
-        x2: a.x2.min(b.x2),
-        y2: a.y2.min(b.y2),
-    }
-}
-
-fn rotated_aabb(overlay: &RawImage, center_x: f64, center_y: f64, theta: f64) -> Aabb {
-    let half_w = overlay.width as f64 / 2.0;
-    let half_h = overlay.height as f64 / 2.0;
-    let cos_t = theta.cos();
-    let sin_t = theta.sin();
-    let corners = [
-        (-half_w, -half_h),
-        (half_w, -half_h),
-        (half_w, half_h),
-        (-half_w, half_h),
-    ];
-    let mut min_x = f64::INFINITY;
-    let mut min_y = f64::INFINITY;
-    let mut max_x = f64::NEG_INFINITY;
-    let mut max_y = f64::NEG_INFINITY;
-    for (dx, dy) in corners {
-        let x = center_x + dx * cos_t - dy * sin_t;
-        let y = center_y + dx * sin_t + dy * cos_t;
-        min_x = min_x.min(x);
-        min_y = min_y.min(y);
-        max_x = max_x.max(x);
-        max_y = max_y.max(y);
-    }
-    Aabb {
-        x1: min_x,
-        y1: min_y,
-        x2: max_x,
-        y2: max_y,
-    }
 }
 
 fn render_size_for_direction(size: (usize, usize), vertical: bool) -> (usize, usize) {
@@ -570,7 +497,14 @@ impl PngRenderer {
         let metrics = to_metrics(text);
         let mut buffer_ = Buffer::new(&mut self.font_system, metrics);
         let mut buffer = buffer_.borrow_with(&mut self.font_system);
-        buffer.set_size(Some(text.size.0 as f32), Some(text.size.1 as f32));
+        // Constrain width only (for line wrapping), leave height unbounded. If the
+        // height is pinned to the box and a line is taller than it, cosmic-text scrolls
+        // the line out entirely → `layout_runs()` is empty → `wh()` measures (0,0),
+        // which fools `max_fontsize` into thinking a too-large font "fits" and then
+        // bakes an empty box (the thin rotated-bubble case). Unbounded height makes the
+        // measurement truthful and the font search monotonic; `render_block` still clips
+        // to the box's pixel buffer.
+        buffer.set_size(Some(text.size.0 as f32), None);
         let attrs = Attrs::new();
         let spans = text
             .texts
@@ -807,7 +741,40 @@ mod tests {
     use cosmic_text::Style;
     use env_logger::Env;
 
-    use crate::{apply_inpaint_overlay, PngRenderer, RenderTextBlock, Text};
+    use crate::{
+        apply_inpaint_overlay, fit_font_size, PngRenderConfig, PngRenderer, RenderTextBlock, Text,
+    };
+
+    #[test]
+    fn fit_font_size_never_exceeds_box_fit() {
+        // Regression: a large detected font (40) used to force the size up to
+        // `detected - detect_offset` (32), well past the size that actually fits the
+        // box (15). The extra-large text then wrapped past the render buffer height and
+        // the lower lines were clipped, so a two-line block showed only its first line.
+        let config = PngRenderConfig {
+            min_fontsize: 4.0,
+            detect_offset: 8.0,
+            ..PngRenderConfig::default()
+        };
+        let font_size = fit_font_size(15.0, 40, &config);
+        assert!(
+            font_size <= 15.0,
+            "font size {font_size} must not exceed the box-fitting size 15"
+        );
+    }
+
+    #[test]
+    fn fit_font_size_nudges_toward_detected_when_box_has_room() {
+        // When the box can fit a larger font than the detector reported, stay near the
+        // detected size (within detect_offset) instead of ballooning to fill the box.
+        let config = PngRenderConfig {
+            min_fontsize: 4.0,
+            detect_offset: 8.0,
+            ..PngRenderConfig::default()
+        };
+        let font_size = fit_font_size(50.0, 20, &config);
+        assert_eq!(font_size, 28.0);
+    }
 
     #[test]
     fn render_test() {
@@ -870,6 +837,43 @@ mod tests {
 
         assert!(font_size.is_finite());
         assert!(font_size <= 8.0);
+    }
+
+    #[test]
+    fn max_fontsize_fits_short_box_height() {
+        // Regression: a thin box (line wraps to one line wider than tall) used to make
+        // cosmic-text scroll the line out of the height-pinned buffer, so `wh()`
+        // measured (0,0) and `max_fontsize` returned a font far too large for the box —
+        // which then baked an empty block (the rotated-bubble case). The fitted font's
+        // line must actually fit the 40px box height.
+        let mut renderer = PngRenderer::default();
+        let block = RenderTextBlock {
+            align: cosmic_text::Align::Center,
+            default_font_size: 1.0,
+            default_line_height: 1.2,
+            vertical: false,
+            size: (1000, 40),
+            texts: vec![Text {
+                text: "Hello world".to_owned(),
+                letter_spacing: None,
+                color: Some((0, 0, 0)),
+                bg_color: None,
+                stretch: None,
+                style: Style::Normal,
+                weight: None,
+                family: Some("Arial".to_owned()),
+                font_size: 1.0,
+                line_height: 1.2,
+            }],
+        };
+
+        let font_size = renderer.max_fontsize((1000, 40), block, 96.0, 0.25);
+
+        // One line at 1.2 line-height must fit 40px: font_size * 1.2 <= 40 → ~33.
+        assert!(
+            font_size * 1.2 <= 41.0,
+            "font {font_size} overflows the 40px box height"
+        );
     }
 
     #[test]

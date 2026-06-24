@@ -5226,6 +5226,7 @@ dependencies = [
  "interface-image",
  "opencv",
  "ordered-float",
+ "textline-merge",
 ]
 
 [[package]]
