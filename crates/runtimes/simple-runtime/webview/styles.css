@@ -1278,6 +1278,10 @@ svg {
   grid-template-rows: var(--preview-height, 300px) 6px auto minmax(0, 1fr);
   min-width: 0;
   min-height: 0;
+  /* Clip to the column: a long status line (e.g. the CUDA download progress) must
+     never paint over the inspector to the right. Internal scroll areas (canvas-stage,
+     log-list) manage their own overflow, so this only fences the spill. */
+  overflow: hidden;
   background: var(--bg);
 }
 
