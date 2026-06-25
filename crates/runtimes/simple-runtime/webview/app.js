@@ -192,6 +192,7 @@ const i18n = {
     editApplied: "已更新嵌字",
     editFailed: "编辑失败",
     editFont: "字号",
+    editFontReset: "重置为自适应字号",
     editFg: "文字颜色",
     editBg: "底色",
     resultStatsEmpty: "暂无结果",
@@ -454,6 +455,7 @@ const i18n = {
     editApplied: "Typeset updated",
     editFailed: "Edit failed",
     editFont: "Size",
+    editFontReset: "Reset to auto size",
     editFg: "Text color",
     editBg: "Backdrop color",
     resultStatsEmpty: "No results",
@@ -593,6 +595,9 @@ const state = {
   editSelected: null,
   editEditor: null,
   editResize: null,
+  // True while the in-place editor should survive a focus-stealing edit-bar control
+  // (the native color picker), so its blur doesn't tear the editor down.
+  editorKeepAlive: false,
   canvasView: null,
   settings: null,
   requestId: 0,
@@ -711,6 +716,7 @@ const els = {
   fontMinus: document.getElementById("fontMinus"),
   fontPlus: document.getElementById("fontPlus"),
   fontValue: document.getElementById("fontValue"),
+  fontReset: document.getElementById("fontReset"),
   fgColor: document.getElementById("fgColor"),
   bgColor: document.getElementById("bgColor"),
   filmstripResizer: document.getElementById("filmstripResizer"),
@@ -2235,10 +2241,31 @@ function syncRegionControls() {
     state.editMode && state.editSelected != null ? regionByIndex(state.editSelected) : null;
   rc.hidden = !region;
   if (!region) return;
+  // The size value is always the renderer's real size; `fontManual` tells us whether
+  // it's a pinned override (normal text + reset entry) or an auto-fit (muted text).
   const fs = region.fontSize && region.fontSize > 0 ? Math.round(region.fontSize) : 0;
-  if (els.fontValue) els.fontValue.textContent = fs > 0 ? String(fs) : "--";
+  const manual = !!region.fontManual;
+  if (els.fontValue) {
+    els.fontValue.textContent = fs > 0 ? String(fs) : "--";
+    els.fontValue.classList.toggle("is-auto", !manual);
+  }
+  if (els.fontReset) els.fontReset.hidden = !manual;
   if (els.fgColor) els.fgColor.value = rgbToHex(region.fg) || "#ffffff";
   if (els.bgColor) els.bgColor.value = rgbToHex(region.bg) || "#808080";
+}
+
+// If a text editor is open on `index` with uncommitted changes, fold that pending
+// text into the in-flight font/color edit so it ships in a single re-render (no
+// stale double-render, nothing lost). Updates the region + editor baseline in place.
+function pendingTextEditFor(index) {
+  const ed = state.editEditor;
+  if (!ed || ed.index !== index || !ed.ta) return null;
+  const text = ed.ta.value;
+  if (text === ed.original) return null;
+  ed.original = text;
+  const region = regionByIndex(index);
+  if (region) region.text = text;
+  return text;
 }
 
 // Nudge the selected region's font size; this pins a manual override server-side.
@@ -2249,8 +2276,24 @@ function stepFontSize(delta) {
   const current = region.fontSize && region.fontSize > 0 ? Math.round(region.fontSize) : 24;
   const next = Math.max(6, Math.min(200, current + delta));
   region.fontSize = next;
-  if (els.fontValue) els.fontValue.textContent = String(next);
-  applyEdit([{ index: state.editSelected, fontSize: next }]);
+  region.fontManual = true;
+  const edit = { index: state.editSelected, fontSize: next };
+  const text = pendingTextEditFor(state.editSelected);
+  if (text != null) edit.text = text;
+  syncRegionControls();
+  applyEdit([edit]);
+}
+
+// Clear the manual size override so the renderer auto-fits again (fontSize:0 sentinel).
+function resetFontSize() {
+  if (!state.editMode || state.editSelected == null) return;
+  const region = regionByIndex(state.editSelected);
+  if (!region || !region.fontManual) return;
+  region.fontManual = false;
+  const edit = { index: state.editSelected, fontSize: 0 };
+  const text = pendingTextEditFor(state.editSelected);
+  if (text != null) edit.text = text;
+  applyEdit([edit]);
 }
 
 function applyRegionColor(which, hex) {
@@ -2259,14 +2302,23 @@ function applyRegionColor(which, hex) {
   if (!rgb) return;
   const region = regionByIndex(state.editSelected);
   if (region) region[which] = rgb;
-  applyEdit([{ index: state.editSelected, [which]: rgb }]);
+  const edit = { index: state.editSelected, [which]: rgb };
+  // Picking a color blurs the in-place editor (native OS dialog); fold any pending
+  // text into this same edit instead of letting a separate blur-commit double-render.
+  const text = pendingTextEditFor(state.editSelected);
+  if (text != null) edit.text = text;
+  applyEdit([edit]);
 }
 
 // Resize handle (bottom-right corner of the selected box, in screen space so it
 // stays a constant size and sits above the text editor).
 function ensureResizeHandle() {
   const viewport = els.canvasStage.querySelector(".canvas-viewport");
-  if (!state.editMode || state.editSelected == null || !viewport) {
+  const region = state.editSelected != null ? regionByIndex(state.editSelected) : null;
+  // Resize is only geometrically sound on axis-aligned boxes. Vertical bubbles carry
+  // a non-zero angle (degrees; merge snaps |angle|<3° to 0), where per-axis bbox
+  // scaling would shear the quad — so hide the handle there (text/color still edit).
+  if (!state.editMode || !region || !viewport || (region.angle && region.angle !== 0)) {
     removeResizeHandle();
     return;
   }
@@ -2477,7 +2529,13 @@ function openTextEditor(index, point) {
       commitTextEditor();
     }
   });
-  ta.addEventListener("blur", () => commitTextEditor());
+  // Keep the editor alive while the user reaches for an edit-bar control that steals
+  // focus via a native dialog (the color picker). The color `change`/`blur` handlers
+  // fold pending text in and refocus; without this guard the editor would tear down.
+  ta.addEventListener("blur", () => {
+    if (state.editorKeepAlive) return;
+    commitTextEditor();
+  });
 }
 
 // Drop the caret where the user clicked (single-click edit). `caretRangeFromPoint`
@@ -2540,6 +2598,7 @@ function finishEditor(ed) {
   if (ed.box) ed.box.classList.remove("is-editing");
   if (ed.ta && ed.ta.parentNode) ed.ta.parentNode.removeChild(ed.ta);
   state.editEditor = null;
+  state.editorKeepAlive = false;
 }
 
 function commitTextEditor() {
@@ -2586,7 +2645,9 @@ async function doApplyEdit(edits) {
     if (res && Array.isArray(res.regions)) {
       for (const upd of res.regions) {
         const region = regionByIndex(upd.index);
-        if (region && typeof upd.fontSize === "number") region.fontSize = upd.fontSize;
+        if (!region) continue;
+        if (typeof upd.fontSize === "number") region.fontSize = upd.fontSize;
+        if (typeof upd.fontManual === "boolean") region.fontManual = upd.fontManual;
       }
     }
     syncRegionControls();
@@ -3874,8 +3935,27 @@ async function bootstrap() {
     el.addEventListener("mousedown", (e) => e.preventDefault());
     el.addEventListener("click", () => stepFontSize(delta));
   }
-  if (els.fgColor) els.fgColor.addEventListener("change", (e) => applyRegionColor("fg", e.target.value));
-  if (els.bgColor) els.bgColor.addEventListener("change", (e) => applyRegionColor("bg", e.target.value));
+  if (els.fontReset) {
+    els.fontReset.addEventListener("mousedown", (e) => e.preventDefault());
+    els.fontReset.addEventListener("click", () => resetFontSize());
+  }
+  for (const [input, which] of [
+    [els.fgColor, "fg"],
+    [els.bgColor, "bg"],
+  ]) {
+    if (!input) continue;
+    // Opening the native picker blurs the in-place editor; mark it keep-alive so the
+    // blur handler skips committing, then refocus once the picker closes.
+    input.addEventListener("pointerdown", () => {
+      if (state.editEditor) state.editorKeepAlive = true;
+    });
+    input.addEventListener("change", (e) => applyRegionColor(which, e.target.value));
+    input.addEventListener("blur", () => {
+      if (!state.editorKeepAlive) return;
+      state.editorKeepAlive = false;
+      if (state.editEditor && state.editEditor.ta) state.editEditor.ta.focus();
+    });
+  }
 
   setDeviceMode(localStorage.getItem("mitWebviewDevice") || "auto");
   els.deviceModeGroup.addEventListener("change", () => {

@@ -1355,6 +1355,29 @@ svg {
   color: var(--text);
 }
 
+/* Auto-fitted size: muted so a pinned (manual) size reads as the deliberate one. */
+.rc-value.is-auto {
+  color: var(--text-muted);
+}
+
+/* Reset-to-auto: only shown while a manual size is pinned (see syncRegionControls). */
+.rc-reset {
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-2);
+  background: var(--surface);
+  color: var(--text-muted);
+  font-size: 13px;
+  line-height: 1;
+}
+
+.rc-reset:hover {
+  background: var(--surface-muted);
+  color: var(--text);
+}
+
 .rc-color {
   display: inline-flex;
   align-items: center;
@@ -1386,6 +1409,12 @@ svg {
   background: var(--surface);
   cursor: nwse-resize;
   box-shadow: var(--shadow-1);
+  transition: transform 100ms ease, background 100ms ease;
+}
+
+.overlay-resize:hover {
+  background: var(--accent-strong);
+  transform: scale(1.25);
 }
 
 .canvas.preview-collapsed {

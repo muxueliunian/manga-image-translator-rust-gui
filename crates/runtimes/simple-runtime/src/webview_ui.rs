@@ -519,6 +519,9 @@ fn load_editable(result_path: &Path) -> Result<serde_json::Value> {
                 "fg": block.fg_color.map(|(r, g, b)| [r, g, b]),
                 "bg": block.bg_color.map(|(r, g, b)| [r, g, b]),
                 "fontSize": font_size,
+                // True when this block carries a pinned manual size (vs. auto-fit);
+                // lets the editor distinguish the two and offer "reset to auto".
+                "fontManual": block.translations.contains_key(png::MANUAL_FONTSIZE_KEY),
             })
         })
         .collect::<Vec<_>>();
@@ -633,7 +636,11 @@ fn rerender_export(result_path: &Path, edits: &[BlockEdit]) -> Result<serde_json
                 Some(metric) if !metric.vertical => metric.font_size,
                 _ => block.font_size as f32,
             };
-            serde_json::json!({ "index": index, "fontSize": font_size })
+            serde_json::json!({
+                "index": index,
+                "fontSize": font_size,
+                "fontManual": block.translations.contains_key(png::MANUAL_FONTSIZE_KEY),
+            })
         })
         .collect::<Vec<_>>();
 
