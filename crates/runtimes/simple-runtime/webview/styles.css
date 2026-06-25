@@ -1315,6 +1315,79 @@ svg {
   display: none !important;
 }
 
+/* Per-region controls (font size / fg / bg) shown in the edit bar when a box is
+   selected. They act on the selected region; resize uses the box handle instead. */
+.region-controls {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding-left: 6px;
+  margin-left: 2px;
+  border-left: 1px solid var(--border);
+}
+
+.rc-label {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.rc-step {
+  min-width: 20px;
+  height: 22px;
+  padding: 0 4px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-2);
+  background: var(--surface);
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1;
+}
+
+.rc-step:hover {
+  background: var(--surface-muted);
+}
+
+.rc-value {
+  min-width: 24px;
+  text-align: center;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+
+.rc-color {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  font-size: 12px;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.rc-color input[type="color"] {
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-2);
+  background: none;
+  cursor: pointer;
+}
+
+/* Bottom-right resize handle on the selected box (screen space, above the editor). */
+.overlay-resize {
+  position: absolute;
+  z-index: 7;
+  width: 14px;
+  height: 14px;
+  margin: -7px 0 0 -7px;
+  border: 1.5px solid var(--accent-strong);
+  border-radius: 3px;
+  background: var(--surface);
+  cursor: nwse-resize;
+  box-shadow: var(--shadow-1);
+}
+
 .canvas.preview-collapsed {
   grid-template-rows: 0 0 auto minmax(0, 1fr);
 }

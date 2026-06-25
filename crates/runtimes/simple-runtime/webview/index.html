@@ -92,6 +92,14 @@
         <div class="canvas-edit-bar" id="canvasEditBar" hidden>
           <button id="toggleEdit" class="ghost-button" type="button" data-i18n="editEnter">编辑嵌字</button>
           <span id="editHint" class="canvas-edit-hint" data-i18n="editHintIdle" hidden>点选文字框：单击改字 · 拖动挪位</span>
+          <div id="regionControls" class="region-controls" hidden>
+            <span class="rc-label" data-i18n="editFont">字号</span>
+            <button id="fontMinus" class="rc-step" type="button" aria-label="font smaller">−</button>
+            <span id="fontValue" class="rc-value">--</span>
+            <button id="fontPlus" class="rc-step" type="button" aria-label="font larger">＋</button>
+            <label class="rc-color" data-i18n-title="editFg" title="文字颜色"><span>A</span><input id="fgColor" type="color" /></label>
+            <label class="rc-color rc-color-bg" data-i18n-title="editBg" title="底色"><span>▣</span><input id="bgColor" type="color" /></label>
+          </div>
           <button id="exitEdit" class="ghost-button" type="button" data-i18n="editExit" hidden>完成编辑</button>
         </div>
         <div class="canvas-stage" id="canvasStage">

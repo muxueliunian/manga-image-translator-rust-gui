@@ -15,6 +15,12 @@ use opencv::{
 use ordered_float::OrderedFloat;
 use textline_merge::{TextBlock, OBB};
 
+/// Translations sentinel key holding a user-chosen font size (stringified positive
+/// number). When present on a block, the renderer uses it verbatim and skips the
+/// box-fitting auto-size — manual override for the P5 editor. Mirrors the manual-text
+/// convention (the GUI stores edited text under its own sentinel key too).
+pub const MANUAL_FONTSIZE_KEY: &str = "__manual_fontsize__";
+
 pub struct PngRenderer {
     font_system: FontSystem,
     cache: SwashCache,
@@ -198,8 +204,23 @@ impl PngRenderer {
             }],
         };
 
-        let fitting = self.max_fontsize(size, render_block.clone(), config.max_fontsize, 1.0);
-        let font_size = fit_font_size(fitting, block.font_size, config);
+        // A manual font size (P5 editor) wins over auto-fit: use it verbatim, only
+        // clamped to the renderer's absolute bounds. Otherwise box-fit and nudge toward
+        // the detected size.
+        let font_size = if let Some(manual) = block
+            .translations
+            .get(MANUAL_FONTSIZE_KEY)
+            .and_then(|v| v.trim().parse::<f32>().ok())
+            .filter(|v| *v > 0.0)
+        {
+            manual
+                .clamp(config.min_fontsize, config.max_fontsize)
+                .round()
+                .max(1.0)
+        } else {
+            let fitting = self.max_fontsize(size, render_block.clone(), config.max_fontsize, 1.0);
+            fit_font_size(fitting, block.font_size, config)
+        };
         render_block.set_font_size(font_size);
 
         Some((render_block, font_size, vertical, obb))

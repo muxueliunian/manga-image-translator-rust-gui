@@ -231,6 +231,19 @@ struct BlockEdit {
     dx: i64,
     #[serde(default)]
     dy: i64,
+    /// Manual font size override. `Some(n>0)` pins the size; `Some(0)` reverts to
+    /// auto-fit; `None` leaves it unchanged.
+    #[serde(default)]
+    font_size: Option<u32>,
+    /// Text / backdrop colors as `[r,g,b]` (None = unchanged).
+    #[serde(default)]
+    fg: Option<[u8; 3]>,
+    #[serde(default)]
+    bg: Option<[u8; 3]>,
+    /// New axis-aligned box `[x,y,w,h]` in image space (resize). The block's quad is
+    /// scaled+translated from its current bbox to this one. None = no resize.
+    #[serde(default)]
+    bbox: Option<[i64; 4]>,
 }
 
 #[derive(Deserialize)]
@@ -547,6 +560,52 @@ fn rerender_export(result_path: &Path, edits: &[BlockEdit]) -> Result<serde_json
                     p.y += edit.dy;
                 }
             }
+        }
+        // Resize: scale+translate the quad from its current axis-aligned bbox to the
+        // new one. Works for axis-aligned bubbles exactly; rotated quads are scaled
+        // within their bbox (acceptable for v1, which only exposes resize on
+        // non-rotated boxes).
+        if let Some([nx, ny, nw, nh]) = edit.bbox {
+            let mut min_x = i64::MAX;
+            let mut min_y = i64::MAX;
+            let mut max_x = i64::MIN;
+            let mut max_y = i64::MIN;
+            for line in &block.lines {
+                for p in line {
+                    min_x = min_x.min(p.x);
+                    min_y = min_y.min(p.y);
+                    max_x = max_x.max(p.x);
+                    max_y = max_y.max(p.y);
+                }
+            }
+            let old_w = (max_x - min_x).max(1) as f64;
+            let old_h = (max_y - min_y).max(1) as f64;
+            let sx = nw.max(1) as f64 / old_w;
+            let sy = nh.max(1) as f64 / old_h;
+            for line in &mut block.lines {
+                for p in line.iter_mut() {
+                    p.x = nx + ((p.x - min_x) as f64 * sx).round() as i64;
+                    p.y = ny + ((p.y - min_y) as f64 * sy).round() as i64;
+                }
+            }
+        }
+        // Manual font size: Some(n>0) pins it; Some(0) reverts to auto-fit.
+        match edit.font_size {
+            Some(n) if n > 0 => {
+                block
+                    .translations
+                    .insert(png::MANUAL_FONTSIZE_KEY.to_owned(), n.to_string());
+            }
+            Some(_) => {
+                block.translations.remove(png::MANUAL_FONTSIZE_KEY);
+            }
+            None => {}
+        }
+        if let Some([r, g, b]) = edit.fg {
+            block.fg_color = Some((r, g, b));
+        }
+        if let Some([r, g, b]) = edit.bg {
+            block.bg_color = Some((r, g, b));
         }
     }
 

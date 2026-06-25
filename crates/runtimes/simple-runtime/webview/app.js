@@ -187,10 +187,13 @@ const i18n = {
     previewHint: "单击左侧条目预览图片。",
     editEnter: "编辑嵌字",
     editExit: "完成编辑",
-    editHintIdle: "点选文字框：单击改字 · 拖动挪位",
+    editHintIdle: "点选文字框：单击改字 · 拖动挪位 · 右下角缩放",
     editEntered: "已进入编辑模式",
     editApplied: "已更新嵌字",
     editFailed: "编辑失败",
+    editFont: "字号",
+    editFg: "文字颜色",
+    editBg: "底色",
     resultStatsEmpty: "暂无结果",
     resultStats: "完成 {done} · 失败 {failed} · 跳过 {skipped}",
     resultEmpty: "暂无结果。完成翻译后可预览图片，并选择导出到指定目录。",
@@ -446,10 +449,13 @@ const i18n = {
     previewHint: "Click an item on the left to preview.",
     editEnter: "Edit Text",
     editExit: "Done",
-    editHintIdle: "Click a box to edit · drag to move",
+    editHintIdle: "Click a box to edit · drag to move · resize from corner",
     editEntered: "Edit mode on",
     editApplied: "Typeset updated",
     editFailed: "Edit failed",
+    editFont: "Size",
+    editFg: "Text color",
+    editBg: "Backdrop color",
     resultStatsEmpty: "No results",
     resultStats: "Done {done} · Failed {failed} · Skipped {skipped}",
     resultEmpty: "No results yet. Finished images can be previewed and exported after translation.",
@@ -586,6 +592,7 @@ const state = {
   editData: null,
   editSelected: null,
   editEditor: null,
+  editResize: null,
   canvasView: null,
   settings: null,
   requestId: 0,
@@ -700,6 +707,12 @@ const els = {
   toggleEdit: document.getElementById("toggleEdit"),
   exitEdit: document.getElementById("exitEdit"),
   editHint: document.getElementById("editHint"),
+  regionControls: document.getElementById("regionControls"),
+  fontMinus: document.getElementById("fontMinus"),
+  fontPlus: document.getElementById("fontPlus"),
+  fontValue: document.getElementById("fontValue"),
+  fgColor: document.getElementById("fgColor"),
+  bgColor: document.getElementById("bgColor"),
   filmstripResizer: document.getElementById("filmstripResizer"),
   resultsResizer: document.getElementById("resultsResizer"),
   logList: document.getElementById("logList"),
@@ -2125,6 +2138,7 @@ function updateEditBar() {
   if (els.toggleEdit) els.toggleEdit.hidden = state.editMode || !editable;
   if (els.exitEdit) els.exitEdit.hidden = !state.editMode;
   if (els.editHint) els.editHint.hidden = !state.editMode;
+  syncRegionControls();
 }
 
 async function enterEditMode() {
@@ -2152,10 +2166,13 @@ async function enterEditMode() {
 
 function exitEditMode({ silent } = {}) {
   closeTextEditor();
+  removeResizeHandle();
+  if (state.canvasView) state.canvasView.onchange = null;
   const wasEditing = state.editMode;
   state.editMode = false;
   state.editData = null;
   state.editSelected = null;
+  syncRegionControls();
   if (wasEditing && !silent) renderCanvas();
 }
 
@@ -2182,15 +2199,164 @@ function renderOverlay(layer) {
 function selectRegion(index) {
   state.editSelected = index;
   const layer = els.canvasStage.querySelector(".canvas-overlay");
-  if (!layer) return;
-  layer.querySelectorAll(".overlay-box").forEach((b) => {
-    b.classList.toggle("is-selected", Number(b.dataset.index) === index);
-  });
+  if (layer) {
+    layer.querySelectorAll(".overlay-box").forEach((b) => {
+      b.classList.toggle("is-selected", Number(b.dataset.index) === index);
+    });
+  }
+  syncRegionControls();
+  ensureResizeHandle();
 }
 
 function overlayBox(index) {
   const layer = els.canvasStage.querySelector(".canvas-overlay");
   return layer ? layer.querySelector(`.overlay-box[data-index="${index}"]`) : null;
+}
+
+// ── Per-region edit controls: font size / fg / bg (in the edit bar) + a resize
+// handle on the selected box. All act on `state.editSelected` and re-render via
+// the same RerenderExport path as text/move edits. ───────────────────────────────
+function rgbToHex(rgb) {
+  if (!Array.isArray(rgb)) return null;
+  const h = (n) => Math.max(0, Math.min(255, n | 0)).toString(16).padStart(2, "0");
+  return `#${h(rgb[0])}${h(rgb[1])}${h(rgb[2])}`;
+}
+
+function hexToRgb(hex) {
+  const m = /^#?([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(hex || "");
+  return m ? [parseInt(m[1], 16), parseInt(m[2], 16), parseInt(m[3], 16)] : null;
+}
+
+// Show + populate the font/color controls for the selected region, or hide them.
+function syncRegionControls() {
+  const rc = els.regionControls;
+  if (!rc) return;
+  const region =
+    state.editMode && state.editSelected != null ? regionByIndex(state.editSelected) : null;
+  rc.hidden = !region;
+  if (!region) return;
+  const fs = region.fontSize && region.fontSize > 0 ? Math.round(region.fontSize) : 0;
+  if (els.fontValue) els.fontValue.textContent = fs > 0 ? String(fs) : "--";
+  if (els.fgColor) els.fgColor.value = rgbToHex(region.fg) || "#ffffff";
+  if (els.bgColor) els.bgColor.value = rgbToHex(region.bg) || "#808080";
+}
+
+// Nudge the selected region's font size; this pins a manual override server-side.
+function stepFontSize(delta) {
+  if (!state.editMode || state.editSelected == null) return;
+  const region = regionByIndex(state.editSelected);
+  if (!region) return;
+  const current = region.fontSize && region.fontSize > 0 ? Math.round(region.fontSize) : 24;
+  const next = Math.max(6, Math.min(200, current + delta));
+  region.fontSize = next;
+  if (els.fontValue) els.fontValue.textContent = String(next);
+  applyEdit([{ index: state.editSelected, fontSize: next }]);
+}
+
+function applyRegionColor(which, hex) {
+  if (!state.editMode || state.editSelected == null) return;
+  const rgb = hexToRgb(hex);
+  if (!rgb) return;
+  const region = regionByIndex(state.editSelected);
+  if (region) region[which] = rgb;
+  applyEdit([{ index: state.editSelected, [which]: rgb }]);
+}
+
+// Resize handle (bottom-right corner of the selected box, in screen space so it
+// stays a constant size and sits above the text editor).
+function ensureResizeHandle() {
+  const viewport = els.canvasStage.querySelector(".canvas-viewport");
+  if (!state.editMode || state.editSelected == null || !viewport) {
+    removeResizeHandle();
+    return;
+  }
+  if (!state.editResize) {
+    const handle = document.createElement("div");
+    handle.className = "overlay-resize";
+    viewport.append(handle);
+    state.editResize = { handle };
+    setupResizeHandle(handle);
+  }
+  state.editResize.index = state.editSelected;
+  if (state.canvasView) state.canvasView.onchange = placeEditOverlays;
+  positionResizeHandle();
+}
+
+function removeResizeHandle() {
+  if (state.editResize && state.editResize.handle && state.editResize.handle.parentNode) {
+    state.editResize.handle.parentNode.removeChild(state.editResize.handle);
+  }
+  state.editResize = null;
+}
+
+function positionResizeHandle() {
+  const view = state.canvasView;
+  if (!state.editResize || !view) return;
+  const region = regionByIndex(state.editResize.index);
+  if (!region) return;
+  state.editResize.handle.style.left = `${view.tx + (region.x + region.w) * view.scale}px`;
+  state.editResize.handle.style.top = `${view.ty + (region.y + region.h) * view.scale}px`;
+}
+
+function setupResizeHandle(handle) {
+  let drag = null;
+  handle.addEventListener("pointerdown", (event) => {
+    const view = state.canvasView;
+    const region = state.editResize ? regionByIndex(state.editResize.index) : null;
+    if (!view || !region) return;
+    event.stopPropagation();
+    event.preventDefault();
+    drag = {
+      index: state.editResize.index,
+      region,
+      startX: event.clientX,
+      startY: event.clientY,
+      w0: region.w,
+      h0: region.h,
+    };
+    try {
+      handle.setPointerCapture(event.pointerId);
+    } catch (_) {}
+  });
+  handle.addEventListener("pointermove", (event) => {
+    if (!drag) return;
+    const view = state.canvasView;
+    const scale = view && view.scale ? view.scale : 1;
+    drag.region.w = Math.max(8, Math.round(drag.w0 + (event.clientX - drag.startX) / scale));
+    drag.region.h = Math.max(8, Math.round(drag.h0 + (event.clientY - drag.startY) / scale));
+    const box = overlayBox(drag.index);
+    if (box) {
+      box.style.width = `${drag.region.w}px`;
+      box.style.height = `${drag.region.h}px`;
+    }
+    positionResizeHandle();
+    if (state.editEditor && state.editEditor.place) state.editEditor.place();
+  });
+  const end = (event) => {
+    if (!drag) return;
+    const d = drag;
+    drag = null;
+    try {
+      handle.releasePointerCapture(event.pointerId);
+    } catch (_) {}
+    if (d.region.w !== d.w0 || d.region.h !== d.h0) {
+      applyEdit([
+        {
+          index: d.index,
+          bbox: [Math.round(d.region.x), Math.round(d.region.y), Math.round(d.region.w), Math.round(d.region.h)],
+        },
+      ]);
+    }
+  };
+  handle.addEventListener("pointerup", end);
+  handle.addEventListener("pointercancel", end);
+}
+
+// Reposition all screen-space edit affordances (text editor + resize handle) on
+// pan/zoom — wired to the viewer's `onchange`.
+function placeEditOverlays() {
+  if (state.editEditor && state.editEditor.place) state.editEditor.place();
+  positionResizeHandle();
 }
 
 function setupOverlayInteractions(layer) {
@@ -2297,9 +2463,9 @@ function openTextEditor(index, point) {
     }
   };
   place();
-  view.onchange = place;
+  view.onchange = placeEditOverlays;
   viewport.append(ta);
-  state.editEditor = { index, ta, box, original: region.text || "" };
+  state.editEditor = { index, ta, box, original: region.text || "", place };
   ta.focus();
   placeCaretAtPoint(ta, point);
   ta.addEventListener("keydown", (event) => {
@@ -2368,7 +2534,9 @@ function readEditorText(el) {
 }
 
 function finishEditor(ed) {
-  if (state.canvasView) state.canvasView.onchange = null;
+  // Keep repositioning the resize handle (selection persists after the text editor
+  // closes); placeEditOverlays no-ops on the now-removed editor.
+  if (state.canvasView) state.canvasView.onchange = placeEditOverlays;
   if (ed.box) ed.box.classList.remove("is-editing");
   if (ed.ta && ed.ta.parentNode) ed.ta.parentNode.removeChild(ed.ta);
   state.editEditor = null;
@@ -2397,7 +2565,15 @@ function closeTextEditor() {
 
 // Persist an edit (renderer-only, no models): overwrites the result PNG + sidecar,
 // then refresh the canvas with the exact re-rendered image (zoom/pan preserved).
-async function applyEdit(edits) {
+// Serialized so rapid edits (font stepping, color picks) don't race on the sidecar.
+function applyEdit(edits) {
+  state.editApplyChain = (state.editApplyChain || Promise.resolve())
+    .catch(() => {})
+    .then(() => doApplyEdit(edits));
+  return state.editApplyChain;
+}
+
+async function doApplyEdit(edits) {
   if (!state.editData) return;
   try {
     const res = await invoke("rerenderExport", { path: state.editData.path, edits });
@@ -2413,6 +2589,8 @@ async function applyEdit(edits) {
         if (region && typeof upd.fontSize === "number") region.fontSize = upd.fontSize;
       }
     }
+    syncRegionControls();
+    placeEditOverlays();
     addLog("success", t("editApplied"));
   } catch (err) {
     addLog("error", `${t("editFailed")}: ${err.message}`);
@@ -3686,6 +3864,18 @@ async function bootstrap() {
 
   if (els.toggleEdit) els.toggleEdit.addEventListener("click", () => enterEditMode());
   if (els.exitEdit) els.exitEdit.addEventListener("click", () => exitEditMode());
+  // Font steppers keep textarea focus (preventDefault on mousedown) so editing text
+  // and nudging size can interleave without the editor closing.
+  for (const [el, delta] of [
+    [els.fontMinus, -2],
+    [els.fontPlus, 2],
+  ]) {
+    if (!el) continue;
+    el.addEventListener("mousedown", (e) => e.preventDefault());
+    el.addEventListener("click", () => stepFontSize(delta));
+  }
+  if (els.fgColor) els.fgColor.addEventListener("change", (e) => applyRegionColor("fg", e.target.value));
+  if (els.bgColor) els.bgColor.addEventListener("change", (e) => applyRegionColor("bg", e.target.value));
 
   setDeviceMode(localStorage.getItem("mitWebviewDevice") || "auto");
   els.deviceModeGroup.addEventListener("change", () => {
