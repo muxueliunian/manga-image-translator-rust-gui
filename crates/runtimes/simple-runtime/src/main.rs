@@ -136,6 +136,7 @@ fn logs_dir() -> &'static Path {
 }
 
 fn main() {
+    gpu_runtime::init_dll_search_path();
     proxy::apply_system_proxy();
 
     tokio::runtime::Builder::new_multi_thread()

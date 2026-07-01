@@ -154,11 +154,62 @@ pub fn detect_nvidia_gpu() -> Option<NvidiaGpu> {
     })
 }
 
+/// Stable, version-independent location for the heavy CUDA runtime DLLs
+/// (cublas/cufft/cudart/cudnn, ~0.9 GB). Deliberately outside the exe's own
+/// directory: repackaging/rebuilding the portable app produces a fresh exe
+/// directory each time, which used to make the app think the DLLs were
+/// missing and re-trigger the ~0.9 GB download. `%LOCALAPPDATA%` persists
+/// across rebuilds and app updates, so it only needs to be downloaded once.
 pub fn cuda_runtime_dir() -> PathBuf {
+    if let Some(local_app_data) = std::env::var_os("LOCALAPPDATA") {
+        return PathBuf::from(local_app_data)
+            .join("manga-image-translator-rust")
+            .join("cuda-runtime");
+    }
     std::env::current_exe()
         .ok()
         .and_then(|path| path.parent().map(Path::to_path_buf))
         .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")))
+}
+
+/// Points the Windows DLL loader at [`cuda_runtime_dir`] so that onnxruntime's
+/// runtime `LoadLibrary` calls for the CUDA execution provider (and its own
+/// cublas/cufft/cudart/cudnn dependencies) can find DLLs living there instead
+/// of next to the exe. Must run before any ONNX session is created (in
+/// particular before `check_cuda_error`/`ensure_cuda_policy`).
+///
+/// Note: `cudnn64_9.dll` itself stays bundled next to the exe (see
+/// `package-windows-portable.ps1`) because it is a load-time (pre-`main`)
+/// import of `simple-runtime.exe` and this call happens too late to affect
+/// that; only the heavier DLLs loaded dynamically at runtime benefit here.
+#[cfg(windows)]
+pub fn init_dll_search_path() {
+    let dir = cuda_runtime_dir();
+    if fs::create_dir_all(&dir).is_err() {
+        return;
+    }
+    unsafe {
+        set_dll_directory(&dir);
+    }
+}
+
+#[cfg(not(windows))]
+pub fn init_dll_search_path() {}
+
+#[cfg(windows)]
+unsafe fn set_dll_directory(dir: &Path) {
+    use std::os::windows::ffi::OsStrExt;
+
+    extern "system" {
+        fn SetDllDirectoryW(lp_path_name: *const u16) -> i32;
+    }
+
+    let wide: Vec<u16> = dir
+        .as_os_str()
+        .encode_wide()
+        .chain(std::iter::once(0))
+        .collect();
+    SetDllDirectoryW(wide.as_ptr());
 }
 
 pub fn check_runtime_dlls() -> Vec<DllStatus> {
